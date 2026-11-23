@@ -1,9 +1,9 @@
 {
   "kind": "copier",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "check": {
-    "file": "template.yml",
-    "name": "Template"
+    "file": "copier.yml",
+    "name": "Copier"
   },
   "consumer": {
     "repository": "chrono-harness/chrono-harness-example",

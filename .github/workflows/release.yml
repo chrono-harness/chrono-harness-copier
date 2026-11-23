@@ -1,7 +1,7 @@
 name: Release
 on:
   workflow_run:
-    workflows: ["Template"]
+    workflows: ["Copier"]
     types: [completed]
     branches: [dev, main]
   workflow_dispatch:

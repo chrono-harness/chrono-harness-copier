@@ -5,7 +5,7 @@ from pathlib import Path
 import unittest
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).parent / ".github" / "release"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / ".github" / "release"))
 import plan
 
 
@@ -108,7 +108,7 @@ class ReleasePlan(unittest.TestCase):
 
 
 class CopierPromotion(unittest.TestCase):
-    source = "chrono-harness/chrono-harness-template"
+    source = "chrono-harness/chrono-harness-copier"
     preview = "v0.1.0-alpha.15"
     consumer = {"repository": "example/host", "branch": "dev", "workflow": "copier.yml",
                 "pin": ".chrono-harness/template-answers.yml", "jobs": ["copier"], "step": "render"}

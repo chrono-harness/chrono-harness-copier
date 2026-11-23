@@ -1,16 +1,18 @@
-# chrono-harness 仓库模板
+# chrono-harness-copier
 
 组件的用途、开发仓库和示例见 [Chrono Harness 用户与开发者入口](https://github.com/chrono-harness/chrono-harness-main)。
+
+本仓开发 Chrono Harness 的 Copier 源模板。已有仓库可以按需安装组件并在后续升级时保留本地配置。新建 GitHub 仓库可用 [chrono-harness-template 的 Use this template](https://github.com/chrono-harness/chrono-harness-template/generate)。
 
 在已有仓库的根目录运行 Copier。默认勾选全部可安装组件和 Verus。`test-git` 提供两个测试命令 `chrono-test-git` 和 `chrono-test-git-profile`。用空格取消任意工具，也可以全部取消。工具从各自版本固定的发行下载，mise 按 SHA-256 校验，安装在工作树外。选中 Verus 会一并安装其依赖的 Rust 1.95.0。 默认选中 diagnostics，也可单选用来回收宿主滚动日志。只选 worktree 的宿主若启用 `.chrono-harness/logging.json`，须同时选择 diagnostics；未启用日志的宿主可取消。选中 worktree、host-bootstrap 或 host-release 时会一并安装它查询项目登记所需的 chrono-judge-registration。选装 host-release 还会安装校验原始构建报告的 host-bootstrap。单选 judge-mixed 会安装 runner 和 registration。runner 校验原生判官请求，registration 提供固定提交的登记与语义文件。mixed 的分类和文档路径查询可以单独运行。单选 judge-filemap 会安装 runner、registration 和 mixed。FILEMAP 用 runner 读取固定 Git 端点、执行受限操作，用 registration 和 mixed 解释提交登记和变更内容，选择受影响的测试。单选 inputs 会安装 runner 读取固定 Git 事实、执行受限命令并交接保管原件，也安装 registration 解释 capture 和有执行单元的 compose。启用滚动日志时同时勾选 diagnostics。带执行单元的 compose 还使用 routes、FILEMAP 和 mixed。pair 和无执行单元的 compose 可离线单独运行。单选 judge-projects 会安装 FILEMAP、routes 和 registration，用于读取受影响节点、校验计划和原始执行回执，以及解释退役测试。单选 judge-workflow 会安装 projects、routes 和 registration，分别读取项目结果、核对计划与回执、解释固定提交的登记。单选 judge-ci 会为 FILEMAP 的端点查询安装 runner，也安装 FILEMAP 和 projects，用于按变更选择测试、核对项目配对，以及执行选中的计划并收集原始进程回执。完整调度和收集使用随装的 routes、mixed 与 registration。单选 routes 会安装 FILEMAP 和 registration，用于解读影响范围和退役测试。单选 judge-cost 会安装 runner、FILEMAP 和 registration，分别用于校验请求、读取变更成本所需的输入和解释登记。只生成工作流的仓库可以单选 ci。需要按变更调度执行单元或汇总其报告时，同时选择 ci 和 judge-ci。支持 Linux x86_64 和 macOS arm64。
 
 ```sh
-uvx --from copier==9.19.1 copier copy --prereleases gh:chrono-harness/chrono-harness-template .
+uvx --from copier==9.19.1 copier copy gh:chrono-harness/chrono-harness-copier .
 mise trust
 mise run harness-setup
 ```
 
-首次安装选择最新的发布标签，包含预发行版。Copier 将选中的标签和本仓答案写入 `.chrono-harness/template-answers.yml`。
+首次安装选择最新的正式版本。用 `--vcs-ref <tag>` 可以选择指定正式版或预览版。Copier 将选中的标签和本仓答案写入 `.chrono-harness/template-answers.yml`。
 
 安装时可填写本仓职责、源码位置和验证命令，模板会将它们直接写入根指南。每个仓库的 `AGENTS.md` 链接到本仓的 `CLAUDE.md`。默认生成的根文件包含首次安装、PR 与验证入口，以及 chrono-harness-instructions 发布的默认规则全文。克隆仓库即可阅读。工具的版本和校验值在本仓的 mise 清单中。
 
@@ -39,6 +41,31 @@ uvx --from copier==9.19.1 copier update --vcs-ref :current: --answers-file .chro
 
 全部工具和业务检查都取消时，可以跳过 mise 步骤。选择记录位于 `.chrono-harness/template-answers.yml`，规则取舍归宿主的 `.chrono-harness/rules.json`。
 
+## 迁移已有宿主的 Copier 来源
+
+原 `chrono-harness-template` 的 Copier 宿主保留自己的选择和追加说明。迁移前提交已修改的文件，从 `.chrono-harness/template-answers.yml` 读取当前 `_commit` 标签，在新旧源上核对同一标签的 Git 文件树。以下命令在宿主内执行，将第一行的标签改成本仓当前记录的值。
+
+```sh
+tag=v0.1.1
+audit=$(mktemp -d)
+git -C "$audit" init -q
+tree_at() {
+  git -C "$audit" fetch --quiet --depth=1 --no-tags "$1" "refs/tags/$tag" &&
+    git -C "$audit" rev-parse 'FETCH_HEAD^{tree}'
+}
+old_tree=$(tree_at https://github.com/chrono-harness/chrono-harness-template.git) &&
+new_tree=$(tree_at https://github.com/chrono-harness/chrono-harness-copier.git) &&
+test -n "$old_tree" && test "$old_tree" = "$new_tree"
+```
+
+树相同后，把 answers 的 `_src_path` 改成 `gh:chrono-harness/chrono-harness-copier`，保留 `_commit` 及其他回答，提交这行变更。先用当前标签验证，再按需升级目标版本。
+
+```sh
+uvx --from copier==9.19.1 copier update --defaults --vcs-ref "$tag" --answers-file .chrono-harness/template-answers.yml
+```
+
+核对生成的 diff 和本仓的业务检查。临时的 `$audit` 在比较完毕后可以删除。本仓开发者从 `dev` 开分支，修改 `scaffold/` 或 `copier.yml`，在仓库根运行 `./tests/check.sh` 验证默认选装、宿主定制和发布配方。
+
 ## Issue 与版本路线图
 
 模板默认启用 `manage_roadmap`。在仓库的 **Issues → Milestones** 查看本仓路线图。新建或重开的事项保留已有里程碑。未分配事项进入 `.chrono-harness/release.json` 的 `version` 所对应的里程碑（例如 `v0.1.0`）。尚未制定版本计划或该版本已经正式发布时，事项进入 `Backlog`。维护者可以随时调整单项归属。PR 的 `Closes #123` 由 GitHub 在合入默认分支时关闭对应事项。
@@ -56,3 +83,7 @@ uvx --from copier==9.19.1 copier update --vcs-ref :current: --answers-file .chro
 dev 落地检查通过后，工作流以该次检查的运行号发布预览。下游采用并通过登记的实际验收后，在提供方 dev 上派发 Release 工作流；它核对双方提交、落地任务、步骤与公开预览，快进 main 并从同一 SHA 发布正式版。二进制正式版沿用已经验证的预览字节。发布新版本时在 dev 更新目标版本。
 
 Copier 源码产品可选 `version_policy: next_patch`。新提交在最高已公开正式版上递增补丁。需要次版本或主版本时，将仓内 `version` 提高到对应目标。路线图将新事项分配到同一版本里程碑。已经正式发布的提交或其祖先再次收到事件时直接结束。默认的 `explicit` 采用仓内版本，二进制产品沿用原生程序的版本声明。
+
+## 开发模板
+
+模板选项在 `copier.yml`，写入宿主的文件在 `scaffold/`。修改模板后，从仓库根目录运行 `./tests/check.sh`。

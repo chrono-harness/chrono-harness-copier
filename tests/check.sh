@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
-node --test roadmap.test.cjs
-PYTHONDONTWRITEBYTECODE=1 uv run --no-project --python ">=3.11" --with PyYAML==6.0.3 python test_release.py
+cd "$(dirname "$0")/.."
+node --test tests/roadmap.test.cjs
+PYTHONDONTWRITEBYTECODE=1 uv run --no-project --python ">=3.11" --with PyYAML==6.0.3 python tests/test_release.py
 stage=$(mktemp -d)
 trap 'rm -rf -- "$stage"' EXIT
-uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD -d repository=chrono-harness/chrono-harness-template "$PWD" "$stage/default"
+uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD -d repository=chrono-harness/chrono-harness-copier "$PWD" "$stage/default"
 uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD -d 'features=[]' -d manage_roadmap=false . "$stage/empty"
 uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
-  -d 'features=["pr"]' -d repository=chrono-harness/chrono-harness-template \
+  -d 'features=["pr"]' -d repository=chrono-harness/chrono-harness-copier \
   -d 'project_guide=业务源码位于 src/。' -d generate_check=true -d 'check_command=python3 check.py' . "$stage/selected"
 # Render the self-hosted publisher and both choices of the host release contract.
 source_plan=$(cat .chrono-harness/release.json)
@@ -26,9 +27,9 @@ test ! -e "$stage/empty/.github/workflows/release.yml"
 test ! -e "$stage/empty/.github/release"
 for tool in diagnostics host-bootstrap host-release inputs judge-routes judge-cost worktree judge-filemap judge-mixed judge-projects judge-ci judge-workflow test-git; do
   uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
-    -d repository=chrono-harness/chrono-harness-template -d "features=[\"$tool\"]" . "$stage/$tool"
+    -d repository=chrono-harness/chrono-harness-copier -d "features=[\"$tool\"]" . "$stage/$tool"
 done
-uv run --no-project --python ">=3.11" python check.py "$stage/empty" "$stage/selected" "$stage/default" "$stage/diagnostics" "$stage/host-bootstrap" "$stage/host-release" "$stage/inputs" "$stage/judge-routes" "$stage/judge-cost" "$stage/worktree" "$stage/judge-filemap" "$stage/judge-mixed" "$stage/judge-projects" "$stage/judge-ci" "$stage/judge-workflow" "$stage/test-git"
+uv run --no-project --python ">=3.11" python tests/check_render.py "$stage/empty" "$stage/selected" "$stage/default" "$stage/diagnostics" "$stage/host-bootstrap" "$stage/host-release" "$stage/inputs" "$stage/judge-routes" "$stage/judge-cost" "$stage/worktree" "$stage/judge-filemap" "$stage/judge-mixed" "$stage/judge-projects" "$stage/judge-ci" "$stage/judge-workflow" "$stage/test-git"
 
 # Exercise a real host that edits its guide and later changes its tool choices.
 (

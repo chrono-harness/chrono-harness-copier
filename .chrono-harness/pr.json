@@ -1,6 +1,6 @@
 {
   "schema": "chrono-pr-config/v3",
-  "repository": "chrono-harness/chrono-harness-template",
+  "repository": "chrono-harness/chrono-harness-copier",
   "base": "dev",
   "gh": "gh",
   "required_checks": ["check"],

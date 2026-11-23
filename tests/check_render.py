@@ -65,8 +65,8 @@ for host, commands in [
     (routes, {"chrono-judge-routes", "chrono-judge-filemap", "chrono-judge-registration"}),
     (cost, {"chrono-harness", "chrono-judge-cost", "chrono-judge-filemap", "chrono-judge-registration"}),
 ]:
-    assert (host / "AGENTS.md").read_text().splitlines()[0] == "# chrono-harness/chrono-harness-template 工作说明"
-    assert (host / ".chrono-harness/USAGE.md").read_text().splitlines()[0] == "# chrono-harness/chrono-harness-template 工具入口"
+    assert (host / "AGENTS.md").read_text().splitlines()[0] == "# chrono-harness/chrono-harness-copier 工作说明"
+    assert (host / ".chrono-harness/USAGE.md").read_text().splitlines()[0] == "# chrono-harness/chrono-harness-copier 工具入口"
     assert not (host / ".chrono-harness/pr.json").exists()
     tools = tomllib.loads((host / manifest).read_text())["tools"]
     assert set(tools) == {"http:" + command for command in commands}
