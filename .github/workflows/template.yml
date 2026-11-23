@@ -1,0 +1,25 @@
+name: Template
+on:
+  pull_request:
+    branches: [dev, main]
+  push:
+    branches: [dev, main]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - run: pipx install uv
+      - name: Generate two adopters
+        shell: bash
+        run: |
+          set -euo pipefail
+          uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD . "$RUNNER_TEMP/empty"
+          uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
+            -d 'features=["pr"]' -d repository=chrono-harness/chrono-harness-template \
+            -d generate_check=true -d 'check_command=python3 check.py' . "$RUNNER_TEMP/selected"
+      - run: python3 check.py "$RUNNER_TEMP/empty" "$RUNNER_TEMP/selected"
