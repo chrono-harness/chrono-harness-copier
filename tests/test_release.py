@@ -1,5 +1,10 @@
 import base64
 import copy
+import hashlib
+import json
+import os
+import shutil
+import tempfile
 import sys
 from pathlib import Path
 import unittest
@@ -7,6 +12,8 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / ".github" / "release"))
 import plan
+with patch.dict(os.environ, {"GITHUB_REPOSITORY": "chrono-harness/chrono-harness-pr"}):
+    import publish
 
 
 repository = "chrono-harness/chrono-harness-pr"
@@ -17,6 +24,57 @@ run = {"repository":{"full_name":repository}, "head_repository":{"full_name":rep
        "path":".github/workflows/check.yml", "event":"push", "status":"completed", "conclusion":"success",
        "head_sha":sha, "head_branch":"dev", "run_number":15}
 event = {"repository":{"full_name":repository}, "workflow_run":run}
+
+
+class PublishedBinaryRetry(unittest.TestCase):
+    def test_retry_compares_each_submitted_binary_with_the_published_bytes(self):
+        tag = "v0.1.0-alpha.15"
+        binary = "chrono-pr"
+        with tempfile.TemporaryDirectory() as tmp:
+            stage = Path(tmp)
+            published = stage / "published"
+            submitted = stage / "submitted"
+            published.mkdir()
+            submitted.mkdir()
+            names = [binary + "-macos-aarch64", binary + "-linux-x86_64"]
+            for name in names:
+                (published / name).write_bytes(name.encode())
+            (published / "SHA256SUMS").write_text("".join(
+                hashlib.sha256((published / name).read_bytes()).hexdigest() + "  " + name + "\n"
+                for name in names))
+            digests = publish.sums(published, binary)
+            release = {"tag_name": tag, "draft": False, "prerelease": True,
+                       "assets": [{"name": name, "digest": "sha256:" + digest, "state": "uploaded"}
+                                  for name, digest in digests.items()]}
+            config_path = stage / ".chrono-harness" / "release.json"
+            config_path.parent.mkdir()
+            config_path.write_text(json.dumps({"kind": "binary", "binary": binary}))
+
+            def download(*args):
+                self.assertEqual(args[:4], ("release", "download", tag, "--dir"))
+                for name in digests:
+                    shutil.copyfile(published / name, Path(args[4]) / name)
+
+            env = {"MODE": "preview", "TAG": tag, "SOURCE_SHA": sha, "DIST": str(submitted)}
+            prior = Path.cwd()
+            try:
+                os.chdir(stage)
+                with patch.dict(os.environ, env), patch.object(publish, "sha_of", return_value=sha), \
+                        patch.object(publish, "by_tag", return_value=release), \
+                        patch.object(publish, "gh", side_effect=download), \
+                        patch.object(publish, "request", side_effect=AssertionError("immutable release")):
+                    for changed in [None, *names]:
+                        with self.subTest(changed=changed):
+                            for name in names:
+                                data = (published / name).read_bytes()
+                                (submitted / name).write_bytes(data + b"!" if changed == name else data)
+                            if changed is None:
+                                publish.main()
+                            else:
+                                with self.assertRaisesRegex(ValueError, "retry assets differ"):
+                                    publish.main()
+            finally:
+                os.chdir(prior)
 
 
 class ReleasePlan(unittest.TestCase):
