@@ -53,7 +53,7 @@ assert "业务源码位于 src/。" in (selected / "AGENTS.md").read_text()
 for host, commands in [
     (diagnostics, {"chrono-diagnostics"}),
     (test_git, {"chrono-test-git", "chrono-test-git-profile"}),
-    (worktree, {"chrono-worktree", "chrono-judge-registration"}),
+    (worktree, {"chrono-worktree"}),
     (bootstrap, {"chrono-harness", "chrono-host-bootstrap", "chrono-judge-registration"}),
     (release, {"chrono-harness", "chrono-host-release", "chrono-host-bootstrap", "chrono-judge-registration"}),
     (inputs, {"chrono-harness", "chrono-inputs", "chrono-judge-registration", "chrono-judge-routes", "chrono-judge-filemap", "chrono-judge-mixed"}),
