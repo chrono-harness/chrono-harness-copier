@@ -347,14 +347,18 @@ class ReleasePlan(ReleaseAdapterTest):
     def test_preview_rejects_wrong_events(self, github):
         selected = plan.plan(config, repository, event, "workflow_run")
         self.assertEqual(selected, {"mode":"preview", "sha":sha, "tag":"v0.1.0-alpha.15"})
-        self.owner.assert_called_once()
-        self.assertEqual(self.owner.call_args.args[0], ["chrono-host-release", "template-run-v1"])
-        self.assertEqual(json.loads(self.owner.call_args.kwargs["input"]),
+        checked, contained = self.owner.call_args_list
+        self.assertEqual(checked.args[0], ["chrono-host-release", "template-run-v1"])
+        self.assertEqual(json.loads(checked.kwargs["input"]),
                          {"repository": repository, "branch": "dev", "workflow": "check.yml", "sha": sha, "run": run})
+        self.assertEqual(contained.args[0], ["chrono-host-release", "template-promotion-v1"])
+        self.assertEqual(json.loads(contained.kwargs["input"]),
+                         {"kind": "contains", "comparison": {"status": "identical"}})
         self.reject("wrong run")
         with self.assertRaisesRegex(ValueError, "wrong run"):
             plan.plan(config, repository, event, "workflow_run")
-        self.owner.return_value = subprocess.CompletedProcess([], 0, "", "")
+        self.owner.side_effect = [subprocess.CompletedProcess([], 0, "", ""),
+                                  subprocess.CompletedProcess([], 2, "", "branch does not contain commit")]
         github.side_effect = lambda path: {"status":"diverged"}
         with self.assertRaisesRegex(ValueError, "does not contain"):
             plan.plan(config, repository, event, "workflow_run")
@@ -370,8 +374,9 @@ class ReleasePlan(ReleaseAdapterTest):
             self.assertEqual(pages.call_args.args, ("releases?per_page=100&page=2",))
 
     def test_published_stable_finishes_the_plan(self):
+        self.owner.return_value = subprocess.CompletedProcess([], 0, "true", "")
         with patch.object(plan, "api", side_effect=[{"status":"ahead"}, [{"ref":"refs/tags/v0.1.0"}],
-                                                    {"draft":False,"prerelease":False,"tag_name":"v0.1.0"},
+                                                    {"draft":False,"prerelease":False,"tag_name":"v0.1.0","published_at":"date"},
                                                     {"object":{"type":"commit","sha":sha}}, {"status":"identical"}]):
             self.assertEqual(plan.plan(config, repository, event, "workflow_run")["mode"], "complete")
 
@@ -435,7 +440,14 @@ class ReleasePlan(ReleaseAdapterTest):
     def test_successful_other_candidate_cannot_release_main(self):
         consumer = {"branch":"dev","workflow":"pr-adoption.yml","repository":"example/org","pin":"lock.toml"}
         main = dict(event, workflow_run=dict(run, head_branch="main"))
-        with patch.object(plan,"sha_of",return_value="b"*40), patch.object(plan,"successful_run",return_value=run), \
+        def refuse_different_main(args, **options):
+            if args[-1] == "template-promotion-v1":
+                request = json.loads(options["input"])
+                self.assertEqual((request["checked_main"], request["selected"]), (sha, "b"*40))
+                return subprocess.CompletedProcess(args, 2, "", "main differs")
+            return self.owner.return_value
+        self.owner.side_effect = refuse_different_main
+        with patch.object(plan,"compare",return_value={"status":"ahead"}), patch.object(plan,"sha_of",return_value="b"*40), patch.object(plan,"successful_run",return_value=run), \
                 patch.object(plan,"check_acceptance"), patch.object(plan,"consumer_pin",return_value=("v0.1.0-alpha.15", {})):
             with self.assertRaisesRegex(ValueError, "main differs"):
                 plan.plan(dict(config, consumer=consumer), repository, main, "workflow_run")
@@ -481,6 +493,20 @@ class CopierPromotion(ReleaseAdapterTest):
         self.outcome = "success"
         self.expected_version = version
         def select(args, **options):
+            if args[-1] == "template-promotion-v1":
+                request = json.loads(options["input"])
+                if request["kind"] == "adopted":
+                    self.assertEqual((request["origin"]["head_sha"], request["selected"], request["workflow"]),
+                                     (sha, sha, "check.yml"))
+                    self.assertEqual((request["development"], request["main"]), ({"status":"ahead"}, {"status":"ahead"}))
+                    if request["tag"].endswith("alpha.14"):
+                        return subprocess.CompletedProcess(args, 2, "", "tag differs from the verified dev run")
+                    self.assertEqual((request["tag"], request["origin"]["run_number"]), (self.preview, 15))
+                if request["kind"] == "candidate":
+                    relation = request["comparison"]["status"]
+                    if relation == "diverged":
+                        return subprocess.CompletedProcess(args, 2, "", "candidate diverges")
+                    return subprocess.CompletedProcess(args, 0, {"ahead":"false","identical":"true","behind":"true"}[relation], "")
             if args[-1] == "template-consumer-pin-v1":
                 request = json.loads(options["input"])
                 self.assertEqual(request["kind"], "copier")
@@ -596,6 +622,9 @@ class NextSourceCycle(CopierPromotion):
                 return rows[100:]
             return self.response(path)
         def select(command, request):
+            if command == "template-promotion-v1":
+                self.assertEqual(request, {"kind": "contains", "comparison": {"status": "ahead"}})
+                return "null"
             self.assertEqual(command, "template-latest-stable-v1")
             self.assertEqual(request, rows)
             return '"v0.1.0"'
