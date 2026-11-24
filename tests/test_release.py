@@ -197,32 +197,44 @@ class BinaryOrigins(ReleaseAdapterTest):
                     "GITHUB_SHA": "b" * 40, "BUILD_RECEIPTS": json.dumps(self.outputs)}
 
     def origins(self):
-        with patch.dict(os.environ, self.env), patch.object(publish, "request", side_effect=self.api.__getitem__):
-            return publish.binary_origins(config, sha, self.files)
+        with patch.dict(os.environ, self.env), patch.object(publish, "request", side_effect=self.api.__getitem__) as get:
+            receipt = publish.binary_origins(config, sha, self.files)
+        return receipt, [call.args[0] for call in get.call_args_list]
 
-    def test_reads_original_attempt_for_each_platform(self):
-        source = self.origins()
-        self.assertEqual(source["check"], {"run": 5, "attempt": 2})
-        self.assertEqual([(row["attempt"], row["artifact"]) for row in source["builds"].values()],
-                         [(2, 32), (1, 31)])
+    def test_forwards_observed_metadata_and_downloaded_bytes(self):
+        receipt = {"source": sha, "check": {"run": 5, "attempt": 2}, "builds": {"owner": "receipt"}}
+        self.owner.return_value = subprocess.CompletedProcess([], 0, json.dumps(receipt), "")
+        for linux_attempt in [1, 2]:
+            with self.subTest(linux_attempt=linux_attempt):
+                linux = dict(json.loads(self.outputs["linux"]), attempt=str(linux_attempt))
+                self.env["BUILD_RECEIPTS"] = json.dumps(dict(self.outputs, linux=json.dumps(linux)))
+                result, fetched = self.origins()
+                self.assertEqual(result, receipt)
+                args, kwargs = self.owner.call_args
+                self.assertEqual(args, (["chrono-host-release", "template-binary-origins-v1"],))
+                request = json.loads(kwargs["input"])
+                expected = {"repository": repository, "binary": "chrono-pr", "source": sha,
+                            "workflow": "check.yml", "check_id": 5, "check_attempt": 2, "run_id": 20,
+                            "current_attempt": 2, "workflow_sha": "b" * 40,
+                            "check": self.api["actions/runs/5/attempts/2"]}
+                for key, platform, selected in (("macos", "macos-aarch64", json.loads(self.outputs["macos"])),
+                                                ("linux", "linux-x86_64", linux)):
+                    path = "actions/runs/20/attempts/" + selected["attempt"]
+                    expected[key] = {
+                        "selected_run": 20, "attempt": int(selected["attempt"]), "artifact_id": int(selected["id"]),
+                        "archive": selected["archive"], "file": selected["file"],
+                        "downloaded": self.files["chrono-pr-" + platform], "run": self.api[path],
+                        "jobs": self.api[path + "/jobs?per_page=100"]["jobs"],
+                        "artifact": self.api["actions/artifacts/" + selected["id"]],
+                    }
+                self.assertEqual(request, expected)
+                self.assertEqual(len(fetched), len(set(fetched)))
+                self.assertEqual(len(fetched), 3 + 2 * len({linux_attempt, 2}))
 
-    def test_rejects_mismatched_native_producer_or_checked_source(self):
-        for target, key, bad in [
-            ("actions/artifacts/31", "digest", "sha256:" + "0" * 64),
-            ("actions/artifacts/31", "expired", True),
-            ("actions/artifacts/31", "name", "another-attempt"),
-            ("actions/artifacts/31", "workflow_run", {"id": 21, "head_sha": "b" * 40}),
-            ("actions/runs/20/attempts/1", "run_attempt", 2),
-            ("actions/runs/20/attempts/1", "head_branch", "feature/other"),
-            ("actions/runs/20/attempts/1/jobs?per_page=100", "jobs", []),
-
-        ]:
-            with self.subTest(target=target, key=key), patch.dict(self.api[target], {key: bad}):
-                with self.assertRaises(ValueError):
-                    self.origins()
-        with patch.dict(self.files, {"chrono-pr-macos-aarch64": "0" * 64}):
-            with self.assertRaisesRegex(ValueError, "downloaded bytes differ"):
-                self.origins()
+    def test_propagates_owner_rejection(self):
+        self.reject("different release workflow or producing attempt")
+        with self.assertRaisesRegex(ValueError, "different release workflow or producing attempt"):
+            self.origins()
 
 
 class ReleasePlan(ReleaseAdapterTest):
