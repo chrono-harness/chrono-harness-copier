@@ -6,7 +6,7 @@ PYTHONDONTWRITEBYTECODE=1 uv run --no-project --python ">=3.11" --with PyYAML==6
 stage=$(mktemp -d)
 trap 'rm -rf -- "$stage"' EXIT
 uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD -d repository=chrono-harness/chrono-harness-copier "$PWD" "$stage/default"
-uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD -d 'features=[]' -d manage_roadmap=false . "$stage/empty"
+uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD -d 'features=[]' -d github_templates=false -d manage_roadmap=false . "$stage/empty"
 uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
   -d 'features=["pr"]' -d repository=chrono-harness/chrono-harness-copier \
   -d 'project_guide=业务源码位于 src/。' -d generate_check=true -d 'check_command=python3 check.py' . "$stage/selected"

@@ -76,6 +76,10 @@ check_os:
   help: 业务检查在哪个平台执行？
   default: ubuntu-24.04
   choices: [ubuntu-24.04, macos-15]
+github_templates:
+  type: bool
+  help: 安装 GitHub Issue 表单及 PR 模板？
+  default: true
 manage_roadmap:
   type: bool
   default: true

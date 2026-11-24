@@ -10,6 +10,10 @@ for path in (".github/roadmap.cjs", ".github/workflows/issue-roadmap.yml"):
     assert not (empty / path).exists()
     assert (full / path).read_bytes() == Path(path).read_bytes()
 
+for path in [Path(".github/PULL_REQUEST_TEMPLATE.md"), *Path(".github/ISSUE_TEMPLATE").glob("*.yml")]:
+    assert (full / path).read_bytes() == path.read_bytes()
+    assert not (empty / path).exists()
+
 assert not (empty / manifest).exists()
 config = tomllib.loads((selected / manifest).read_text())
 assert set(config["tools"]) == {"http:chrono-pr"}

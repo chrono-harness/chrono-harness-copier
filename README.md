@@ -2,6 +2,8 @@
 
 组件的用途、开发仓库和示例见 [Chrono Harness 用户与开发者入口](https://github.com/chrono-harness/chrono-harness-main)。
 
+仓库默认安装 GitHub 的四类 Issue 表单和 PR 模板。已有协作模板的仓库可在 Copier 中关闭 `github_templates`。
+
 本仓开发 Chrono Harness 的 Copier 源模板。已有仓库可以按需安装组件并在后续升级时保留本地配置。新建 GitHub 仓库可用 [chrono-harness-template 的 Use this template](https://github.com/chrono-harness/chrono-harness-template/generate)。
 
 在已有仓库的根目录运行 Copier。默认勾选全部可安装组件和 Verus。`test-git` 提供两个测试命令 `chrono-test-git` 和 `chrono-test-git-profile`。用空格取消任意工具，也可以全部取消。工具从各自版本固定的发行下载，mise 按 SHA-256 校验，安装在工作树外。选中 Verus 会一并安装其依赖的 Rust 1.95.0。

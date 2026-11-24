@@ -28,6 +28,7 @@ project_guide: ''
 repository: chrono-harness/chrono-harness-copier
 required_check: check
 
+github_templates: true
 manage_roadmap: true
 publisher_workflow: Release
 release_plan: {"kind": "copier", "version": "0.1.2", "check": {"file": "copier.yml", "name": "Copier"}, "consumer": {"repository": "chrono-harness/chrono-harness-example", "branch": "dev", "workflow": "template-adoption.yml", "pin": ".chrono-harness/template-answers.yml", "jobs": ["copier"], "step": "Render the installed template and verify the selected host files"}, "version_policy": "next_patch"}
