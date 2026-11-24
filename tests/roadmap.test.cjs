@@ -52,7 +52,12 @@ test('new work, release publication, closing and reopening reconcile against cur
   const run = (selected, numbers, state, plan = defaults, version) => {
     const snapshots = releases.map(({draft, published_at}) => JSON.parse(JSON.stringify({draft, published_at})))
     reply({operation: 'published', releases: snapshots}, selected)
-    if (version) reply({floor: plan.version, latest: version.latest}, version.target, undefined, 'template-next-version-v1')
+    if (version) {
+      const tags = releases.map(({tag_name, draft, prerelease, published_at}) =>
+        JSON.parse(JSON.stringify({tag_name, draft, prerelease, published_at})))
+      reply(tags, version.latest ? 'v' + version.latest : null, undefined, 'template-latest-stable-v1')
+      reply({floor: plan.version, latest: version.latest}, version.target, undefined, 'template-next-version-v1')
+    }
     if (numbers !== null) {
       const rows = issues.listForRepo().map(({number, state, pull_request, milestone}) =>
         JSON.parse(JSON.stringify({number, state, pull_request, milestone})))
