@@ -63,7 +63,14 @@ test('new work, release publication, closing and reopening reconcile against cur
         JSON.parse(JSON.stringify({number, state, pull_request, milestone})))
       reply({operation: 'unassigned', issues: rows}, numbers)
     }
-    if (state) reply({operation: 'milestone', final_release: state.final, open_issues: state.open}, state.result)
+    if (state) {
+      const milestone = milestones.find(m => m.title === 'v1.2.0')
+      const lines = ['测试版 [v1.2.0-alpha.1](https://example.org/preview)']
+      if (state.final) lines.push('正式版 [v1.2.0](https://example.org/stable)')
+      reply({operation: 'release-block', milestone: milestone.number, original: milestone.description, lines},
+        state.final ? '原样交还的正式版正文' : '保留宿主计划。 v1.2.0-alpha.1', state.error)
+      if (!state.error) reply({operation: 'milestone', final_release: state.final, open_issues: state.open}, state.result)
+    }
     return sync(github, {repo: {owner: 'a', repo: 'b'}, payload: {}}, plan)
   }
   await run([], [1], null, null)
@@ -87,7 +94,7 @@ test('new work, release publication, closing and reopening reconcile against cur
   await run([0, 2], [4], {final:true, open:1, result:'open'})
   assert.equal(items[3].milestone, 1)
   assert.equal(target.state, 'open')
-  assert.match(target.description, /正式版/)
+  assert.equal(target.description, '原样交还的正式版正文')
   items[2].state = 'closed'
   await run([0, 2], [], {final:true, open:0, result:'closed'})
   assert.equal(target.state, 'closed')
@@ -104,6 +111,12 @@ test('new work, release publication, closing and reopening reconcile against cur
   items.push({number: 6, state: 'open'})
   await run([0, 2], [6], {final:true, open:1, result:'open'}, {...rolling, version: '2.0.0'}, {latest:'1.2.0', target:'2.0.0'})
   assert.equal(items.at(-1).milestone, milestones.find(m => m.title === 'v2.0.0').number)
+  target.description = '<!-- chrono-harness release -->未完的原文'
+  writes.length = 0
+  const error = new Error('Incomplete release block in milestone ' + target.number)
+  await assert.rejects(run([0, 2], [], {final:true, error}), error)
+  assert.deepEqual(writes, [])
+  assert.equal(target.description, '<!-- chrono-harness release -->未完的原文')
   await assert.rejects(run([0, 2], null, null, {...rolling, kind: 'binary'}), /Copier/)
   await assert.rejects(sync(github, {}, {version: 'not-a-version'}), /Expected version/)
 })
