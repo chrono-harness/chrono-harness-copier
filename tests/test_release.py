@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import shutil
+import subprocess
 import tempfile
 import sys
 from pathlib import Path
@@ -24,6 +25,16 @@ run = {"repository":{"full_name":repository}, "head_repository":{"full_name":rep
        "path":".github/workflows/check.yml", "event":"push", "status":"completed", "conclusion":"success",
        "head_sha":sha, "head_branch":"dev", "run_number":15}
 event = {"repository":{"full_name":repository}, "workflow_run":run}
+
+
+class ReleaseAdapterTest(unittest.TestCase):
+    def setUp(self):
+        super().setUp()
+        self.owner = self.enterContext(patch.object(plan.subprocess, "run"))
+        self.owner.return_value = subprocess.CompletedProcess([], 0, "", "")
+
+    def reject(self, message):
+        self.owner.return_value = subprocess.CompletedProcess([], 2, "", message)
 
 
 class PublishedBinaryRetry(unittest.TestCase):
@@ -78,8 +89,9 @@ class PublishedBinaryRetry(unittest.TestCase):
                 os.chdir(prior)
 
 
-class BinaryOrigins(unittest.TestCase):
+class BinaryOrigins(ReleaseAdapterTest):
     def setUp(self):
+        super().setUp()
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
         event = Path(self.temp.name) / "event.json"
@@ -127,7 +139,7 @@ class BinaryOrigins(unittest.TestCase):
             ("actions/runs/20/attempts/1", "run_attempt", 2),
             ("actions/runs/20/attempts/1", "head_branch", "feature/other"),
             ("actions/runs/20/attempts/1/jobs?per_page=100", "jobs", []),
-            ("actions/runs/5/attempts/2", "head_sha", "b" * 40),
+
         ]:
             with self.subTest(target=target, key=key), patch.dict(self.api[target], {key: bad}):
                 with self.assertRaises(ValueError):
@@ -137,16 +149,19 @@ class BinaryOrigins(unittest.TestCase):
                 self.origins()
 
 
-class ReleasePlan(unittest.TestCase):
+class ReleasePlan(ReleaseAdapterTest):
     @patch.object(plan, "api", side_effect=lambda path: {"status":"identical"} if "/compare/" in path else [])
     def test_preview_rejects_wrong_events(self, github):
         selected = plan.plan(config, repository, event, "workflow_run")
         self.assertEqual(selected, {"mode":"preview", "sha":sha, "tag":"v0.1.0-alpha.15"})
-        for key, value in (("repository", {"full_name":"fork/pr"}), ("head_repository", {"full_name":"fork/pr"}),
-                           ("event","pull_request"), ("status","in_progress"), ("conclusion","failure"),
-                           ("path",".github/workflows/unrelated.yml"), ("head_branch","feature")):
-            with self.subTest(key=key), self.assertRaises(ValueError):
-                plan.plan(config, repository, dict(event, workflow_run=dict(run, **{key:value})), "workflow_run")
+        self.owner.assert_called_once()
+        self.assertEqual(self.owner.call_args.args[0], ["chrono-host-release", "template-run-v1"])
+        self.assertEqual(json.loads(self.owner.call_args.kwargs["input"]),
+                         {"repository": repository, "branch": "dev", "workflow": "check.yml", "sha": sha, "run": run})
+        self.reject("wrong run")
+        with self.assertRaisesRegex(ValueError, "wrong run"):
+            plan.plan(config, repository, event, "workflow_run")
+        self.owner.return_value = subprocess.CompletedProcess([], 0, "", "")
         github.side_effect = lambda path: {"status":"diverged"}
         with self.assertRaisesRegex(ValueError, "does not contain"):
             plan.plan(config, repository, event, "workflow_run")
@@ -202,12 +217,12 @@ class ReleasePlan(unittest.TestCase):
         jobs=[job,dict(job,name="linux")]
         with patch.object(plan,"api",return_value={"jobs":jobs}):
             plan.check_acceptance("example/org",checked,consumer)
-            jobs[1] = dict(job,name="linux",steps=[{"name":"exercise","conclusion":"skipped"}])
+            self.assertEqual(self.owner.call_args.args[0], ["chrono-host-release", "template-acceptance-v1"])
+            self.assertEqual(json.loads(self.owner.call_args.kwargs["input"]),
+                             {"jobs": jobs, "sha": sha, "required_jobs": ["mac", "linux"], "step": "exercise"})
+            self.reject("missing exercised product")
             with self.assertRaisesRegex(ValueError, "missing exercised"):
-                plan.check_acceptance("example/org",checked,consumer)
-            jobs.pop()
-            with self.assertRaisesRegex(ValueError,"missing successful"):
-                plan.check_acceptance("example/org",checked,consumer)
+                plan.check_acceptance("example/org", checked, consumer)
 
     def test_dispatch_requires_landed_consumer(self):
         consumer = {"branch":"dev","workflow":"pr-adoption.yml","repository":"example/org","pin":"lock.toml"}
@@ -225,7 +240,7 @@ class ReleasePlan(unittest.TestCase):
                 plan.plan(dict(config, consumer=consumer), repository, main, "workflow_run")
 
 
-class CopierPromotion(unittest.TestCase):
+class CopierPromotion(ReleaseAdapterTest):
     source = "chrono-harness/chrono-harness-copier"
     preview = "v0.1.0-alpha.15"
     consumer = {"repository": "example/host", "branch": "dev", "workflow": "copier.yml",
@@ -256,6 +271,7 @@ class CopierPromotion(unittest.TestCase):
         raise AssertionError(path)
 
     def setUp(self):
+        super().setUp()
         self.adopted = "b" * 40
         self.answers = "_src_path: gh:" + self.source + "\n_commit: " + self.preview
         self.release = {"tag_name": self.preview, "prerelease": True, "draft": False, "assets": []}
@@ -280,6 +296,12 @@ class CopierPromotion(unittest.TestCase):
                 self.promote()
         self.answers = valid
         self.outcome = "skipped"
+        def skipped(args, **options):
+            if args[-1] == "template-acceptance-v1":
+                self.assertEqual(json.loads(options["input"])["jobs"][0]["steps"][0]["conclusion"], "skipped")
+                return subprocess.CompletedProcess(args, 2, "", "missing exercised product")
+            return subprocess.CompletedProcess(args, 0, "", "")
+        self.owner.side_effect = skipped
         with self.assertRaisesRegex(ValueError, "missing exercised"):
             self.promote()
 

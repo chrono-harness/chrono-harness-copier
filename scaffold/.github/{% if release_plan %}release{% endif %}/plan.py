@@ -17,13 +17,16 @@ def api(path):
     return json.loads(subprocess.check_output(["gh", "api", path]))
 
 
+def judge(command, request):
+    result = subprocess.run(["chrono-host-release", command], input=json.dumps(request),
+                            text=True, capture_output=True)
+    if result.returncode:
+        raise ValueError(result.stderr.strip() or f"{command} exited {result.returncode}")
+
+
 def check_run(run, repository, branch, workflow, sha):
-    require(run.get("repository", {}).get("full_name") == repository, "wrong check repository")
-    require(run.get("head_repository", {}).get("full_name") == repository, "wrong head repository")
-    require(run.get("path") == ".github/workflows/" + workflow, "wrong workflow path")
-    require(run.get("head_branch") == branch and run.get("head_sha") == sha, "wrong check commit")
-    require(run.get("event") == "push" and run.get("status") == "completed"
-            and run.get("conclusion") == "success", "landed push has no successful check")
+    judge("template-run-v1", {"run": run, "repository": repository, "branch": branch,
+                              "workflow": workflow, "sha": sha})
 
 
 def successful_run(repository, branch, workflow, sha):
@@ -38,15 +41,8 @@ def successful_run(repository, branch, workflow, sha):
 
 def check_acceptance(repository, run, consumer):
     path = f"repos/{repository}/actions/runs/{run['id']}/attempts/{run['run_attempt']}/jobs?per_page=100"
-    jobs = {job["name"]: job for job in api(path)["jobs"]}
-    require(consumer["jobs"] and consumer["step"], "missing consumer acceptance obligations")
-    for name in consumer["jobs"]:
-        job = jobs.get(name, {})
-        require(job.get("conclusion") == "success" and job.get("head_sha") == run["head_sha"],
-                f"missing successful consumer on {name}")
-        require(any(step["name"] == consumer["step"]
-                    and step["conclusion"] == "success" for step in job.get("steps", [])),
-                f"missing exercised product on {name}")
+    judge("template-acceptance-v1", {"jobs": api(path)["jobs"], "sha": run["head_sha"],
+                                     "required_jobs": consumer["jobs"], "step": consumer["step"]})
 
 
 def sha_of(repository, ref):

@@ -3,6 +3,13 @@ _subdirectory: scaffold
 _preserve_symlinks: true
 _skip_if_exists: [.chrono-harness/rules.json]
 _answers_file: .chrono-harness/template-answers.yml
+host_release_artifact:
+  type: yaml
+  when: false
+  default:
+    version: "0.1.0-alpha.6"
+    linux_sha256: "e75e4e3a7987c99f585e559de3fbe4da9e490609271ec5867877150932f07597"
+    macos_sha256: "7aa0e2d10c4c9d9d38dca81158e9bd645b9ca67303d028ad2cf3a6b9a616748a"
 tool_dependencies:
   type: yaml
   when: false
