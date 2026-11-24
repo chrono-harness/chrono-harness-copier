@@ -22,6 +22,7 @@ def judge(command, request):
                             text=True, capture_output=True)
     if result.returncode:
         raise ValueError(result.stderr.strip() or f"{command} exited {result.returncode}")
+    return result.stdout
 
 
 def check_run(run, repository, branch, workflow, sha):
@@ -135,11 +136,9 @@ def next_target(config, repository):
         return config, None
     require(config["kind"] == "copier", "next_patch requires a Copier source product")
     latest = latest_source_release(repository)
-    if latest is None:
-        return config, None
-    (major, minor, patch), _, _ = latest
-    target = max((major, minor, patch + 1), tuple(map(int, config["version"].split("."))))
-    return dict(config, version=".".join(map(str, target))), latest
+    result = judge("template-next-version-v1", {"floor": config["version"],
+                                                "latest": latest[1][1:] if latest else None})
+    return dict(config, version=json.loads(result)), latest
 
 
 def already_released(repository, latest, sha):

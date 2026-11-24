@@ -296,11 +296,12 @@ class CopierPromotion(ReleaseAdapterTest):
                 self.promote()
         self.answers = valid
         self.outcome = "skipped"
+        previous = self.owner.side_effect
         def skipped(args, **options):
             if args[-1] == "template-acceptance-v1":
                 self.assertEqual(json.loads(options["input"])["jobs"][0]["steps"][0]["conclusion"], "skipped")
                 return subprocess.CompletedProcess(args, 2, "", "missing exercised product")
-            return subprocess.CompletedProcess(args, 0, "", "")
+            return previous(args, **options) if previous else self.owner.return_value
         self.owner.side_effect = skipped
         with self.assertRaisesRegex(ValueError, "missing exercised"):
             self.promote()
@@ -317,6 +318,14 @@ class NextSourceCycle(CopierPromotion):
 
     def setUp(self):
         super().setUp()
+        def release_command(args, **options):
+            if args[-1] != "template-next-version-v1":
+                return subprocess.CompletedProcess(args, 0, "", "")
+            observed = json.loads(options["input"])
+            self.assertEqual(observed["latest"], "0.1.0")
+            responses = {"0.1.0": "0.1.1", "2.0.0": "2.0.0"}
+            return subprocess.CompletedProcess(args, 0, json.dumps(responses[observed["floor"]]), "")
+        self.owner.side_effect = release_command
         self.preview = "v0.1.1-alpha.15"
         self.answers = "_src_path: gh:" + self.source + "\n_commit: " + self.preview
         self.release["tag_name"] = self.preview
