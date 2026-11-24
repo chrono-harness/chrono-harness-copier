@@ -37,7 +37,7 @@ class ReleaseAdapterTest(unittest.TestCase):
         self.owner.return_value = subprocess.CompletedProcess([], 2, "", message)
 
 
-class PublishedBinaryRetry(unittest.TestCase):
+class PublishedBinaryRetry(ReleaseAdapterTest):
     def test_retry_compares_each_submitted_binary_with_the_published_bytes(self):
         tag = "v0.1.0-alpha.15"
         binary = "chrono-pr"
@@ -82,6 +82,12 @@ class PublishedBinaryRetry(unittest.TestCase):
                                 (submitted / name).write_bytes(data + b"!" if changed == name else data)
                             if changed is None:
                                 publish.main()
+                                self.assertEqual(self.owner.call_args.args[0],
+                                                 ["chrono-host-release", "template-release-v1"])
+                                self.assertEqual(json.loads(self.owner.call_args.kwargs["input"]), {
+                                    "release": release, "tag": tag, "draft": False, "prerelease": True,
+                                    "assets": {name: "sha256:" + value for name, value in digests.items()},
+                                })
                             else:
                                 with self.assertRaisesRegex(ValueError, "retry assets differ"):
                                     publish.main()
@@ -200,13 +206,12 @@ class ReleasePlan(ReleaseAdapterTest):
                              for name in [*checks,"SHA256SUMS"]]}
         with patch.object(plan, "api", return_value=release):
             self.assertEqual(plan.public_preview(repository, tag, checks), release)
-            original_assets = release["assets"]
-            release["assets"] = []
-            with self.assertRaisesRegex(ValueError, "missing"):
-                plan.public_preview(repository, tag, checks)
-            release["assets"] = original_assets
-            release["assets"][0]["digest"]="sha256:"+"0"*64
-            with self.assertRaisesRegex(ValueError, "checksums"):
+            self.assertEqual(self.owner.call_args.args[0], ["chrono-host-release", "template-release-v1"])
+            self.assertEqual(json.loads(self.owner.call_args.kwargs["input"]), {
+                "release": release, "tag": tag, "draft": False, "prerelease": True,
+                "assets": {**checks, "SHA256SUMS": None}})
+            self.reject("release assets differ")
+            with self.assertRaisesRegex(ValueError, "release assets differ"):
                 plan.public_preview(repository, tag, checks)
 
     def test_skipped_or_wrong_platform_does_not_prove_adoption(self):
@@ -306,11 +311,19 @@ class CopierPromotion(ReleaseAdapterTest):
         with self.assertRaisesRegex(ValueError, "missing exercised"):
             self.promote()
 
-    def test_rejects_draft_and_unexpected_assets(self):
-        for field, wrong in [("draft", True), ("prerelease", False), ("assets", [{"state": "uploaded"}]),
-                             ("assets", [{"state": "starter"}])]:
-            with self.subTest(field=field), patch.dict(self.release, {field: wrong}), self.assertRaises(ValueError):
-                self.promote()
+    def test_forwards_source_release_and_propagates_the_verifier_exit(self):
+        self.release["draft"] = True
+        self.release["assets"] = [{"state": "starter"}]
+        previous = self.owner.side_effect
+        def reject_release(args, **options):
+            if args[-1] == "template-release-v1":
+                self.assertEqual(json.loads(options["input"]), {"release": self.release, "tag": self.preview,
+                                 "draft": False, "prerelease": True, "assets": {}})
+                return subprocess.CompletedProcess(args, 2, "", "source release differs")
+            return previous(args, **options) if previous else self.owner.return_value
+        self.owner.side_effect = reject_release
+        with self.assertRaisesRegex(ValueError, "source release differs"):
+            self.promote()
 
 
 class NextSourceCycle(CopierPromotion):

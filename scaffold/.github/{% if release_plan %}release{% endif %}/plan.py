@@ -68,18 +68,15 @@ def pin_manifest(repository, binary, version, tool):
     return "v" + pin, result
 
 
+def check_release(release, tag, prerelease, draft, assets):
+    judge("template-release-v1", {"release": release, "tag": tag, "prerelease": prerelease,
+                                  "draft": draft, "assets": assets})
+
+
 def public_preview(repository, tag, checksums):
     release = api(f"repos/{repository}/releases/tags/{tag}")
-    require(not release["draft"] and release["prerelease"] and release["tag_name"] == tag,
-            "preview is not published")
-    assets = release["assets"]
-    require(all(asset["state"] == "uploaded" for asset in assets), "incomplete preview assets")
-    if checksums is None:
-        require(not assets, "unexpected uploaded assets for a Copier source release")
-    else:
-        digests = {asset["name"]: asset["digest"] for asset in assets}
-        require(set(digests) == set(checksums) | {"SHA256SUMS"}, "missing or unexpected preview assets")
-        require(all(digests[name] == val for name, val in checksums.items()), "consumer checksums differ")
+    assets = {} if checksums is None else {**checksums, "SHA256SUMS": None}
+    check_release(release, tag, True, False, assets)
     return release
 
 
