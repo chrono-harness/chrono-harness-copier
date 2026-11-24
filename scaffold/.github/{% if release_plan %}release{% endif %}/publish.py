@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from plan import check_run, require, sha_of
+from plan import check_release, check_run, require, sha_of
 
 
 repo = os.environ["GITHUB_REPOSITORY"]
@@ -65,12 +65,6 @@ def tag_at(tag, sha):
     if ref is None:
         request("git/refs", method="POST", data=json.dumps({"ref": "refs/tags/" + tag, "sha": sha}).encode())
     require(sha_of(repo, "tags/" + tag) == sha, "tag points to different source")
-
-
-def recorded(release, tag, prerelease):
-    require(release["tag_name"] == tag and release["prerelease"] == prerelease, "different release kind")
-    require(all(a["state"] == "uploaded" for a in release["assets"]), "incomplete release assets")
-    return {a["name"]: a["digest"].removeprefix("sha256:") for a in release["assets"]}
 
 
 def binary_origins(config, sha, digests):
@@ -140,6 +134,7 @@ def main():
         if binary:
             gh("release", "download", parent, "--dir", dist)
     digests = sums(dist, binary) if binary else {}
+    assets = {name: "sha256:" + digest for name, digest in digests.items()}
     origins = binary_origins(config, sha, digests) if binary and not stable else None
     if not stable and release and not release["draft"]:
         require(sha_of(repo, "tags/" + tag) == sha, "preview tag moved")
@@ -147,16 +142,16 @@ def main():
             if binary:
                 gh("release", "download", tag, "--dir", tmp)
             expected = sums(Path(tmp), binary) if binary else {}
-            require(recorded(release, tag, True) == expected, "invalid published preview")
             require(digests == expected, "retry assets differ from the published preview")
+            check_release(release, tag, True, False, assets)
         return
     if stable:
         preview = request("releases/tags/" + parent)
-        require(not preview["draft"] and recorded(preview, parent, True) == digests, "preview bytes changed")
+        check_release(preview, parent, True, False, assets)
         if release:
             require(sha_of(repo, "tags/" + tag) == sha, "stable tag points to a different source")
             if not release["draft"]:
-                require(recorded(release, tag, False) == digests, "stable assets differ from verified preview")
+                check_release(release, tag, False, False, assets)
                 require(sha_of(repo, "heads/main") == sha, "main differs from published stable")
                 return
         # GitHub rejects a non-fast-forward update. Check again at the point of publication.
@@ -180,11 +175,11 @@ def main():
         gh("release", "upload", tag, *[dist / n for n in digests], "--clobber")
     address = f"releases/{release['id']}"
     draft = request(address)
-    require(draft["draft"] and recorded(draft, tag, not stable) == digests, "draft differs from checked assets")
+    check_release(draft, tag, not stable, True, assets)
     if origins:
         require(draft.get("body") == notes, "different build origins on draft")
     published = request(address, method="PATCH", data=b'{"draft":false}')
-    require(not published["draft"] and recorded(published, tag, not stable) == digests, "publication differs")
+    check_release(published, tag, not stable, False, assets)
 
 
 if __name__ == "__main__":

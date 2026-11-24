@@ -62,6 +62,16 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
+      - name: Install the release verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          directory=$(mktemp -d "$RUNNER_TEMP/release-tool.XXXXXXXX")
+          curl --fail --silent --show-error --location "https://github.com/chrono-harness/chrono-harness-host-release/releases/download/v0.1.0-alpha.9/chrono-host-release-linux-x86_64" -o "$directory/chrono-host-release"
+          (cd "$directory" && echo "1eea315204041feaa0ece605bef4c250ac693a76cc9fe1b4a1a8b1b64c04659b  chrono-host-release" | sha256sum --check --status)
+          chmod 755 "$directory/chrono-host-release"
+          echo "$directory" >> "$GITHUB_PATH"
+
       - name: Verify and publish the selected release
         env:
           GH_TOKEN: ${{ github.token }}
