@@ -62,6 +62,7 @@ class PublishedBinaryRetry(unittest.TestCase):
                 with patch.dict(os.environ, env), patch.object(publish, "sha_of", return_value=sha), \
                         patch.object(publish, "by_tag", return_value=release), \
                         patch.object(publish, "gh", side_effect=download), \
+                        patch.object(publish, "binary_origins", return_value={"source": sha}), \
                         patch.object(publish, "request", side_effect=AssertionError("immutable release")):
                     for changed in [None, *names]:
                         with self.subTest(changed=changed):
@@ -75,6 +76,65 @@ class PublishedBinaryRetry(unittest.TestCase):
                                     publish.main()
             finally:
                 os.chdir(prior)
+
+
+class BinaryOrigins(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        event = Path(self.temp.name) / "event.json"
+        event.write_text(json.dumps({"workflow_run": {"id": 5, "run_attempt": 2}}))
+        self.api = {"actions/runs/5/attempts/2": dict(run, id=5, run_attempt=2)}
+        self.outputs = {}
+        self.files = {}
+        for key, platform, attempt, artifact in (("linux", "linux-x86_64", 1, 31),
+                                                ("macos", "macos-aarch64", 2, 32)):
+            binary = "chrono-pr-" + platform
+            digest = hashlib.sha256(binary.encode()).hexdigest()
+            self.files[binary] = digest
+            archive = hashlib.sha256((binary + ".zip").encode()).hexdigest()
+            self.outputs[key] = json.dumps({"id": str(artifact), "run": "20",
+                                           "attempt": str(attempt), "archive": archive, "file": digest})
+            path = f"actions/runs/20/attempts/{attempt}"
+            self.api[path] = dict(run, id=20, run_attempt=attempt, head_sha="b" * 40,
+                                  event="workflow_run", path=".github/workflows/release.yml")
+            self.api[path + "/jobs?per_page=100"] = {"jobs": [
+                {"id": artifact + 10, "name": "Build " + platform, "conclusion": "success",
+                 "head_sha": "b" * 40, "steps": [{"name": step, "conclusion": "success"} for step in
+                                           ("Build and exercise the release binary", "Upload the exercised binary")]}]}
+            self.api[f"actions/artifacts/{artifact}"] = {
+                "id": artifact, "name": f"{platform}-{sha}-{attempt}", "expired": False,
+                "digest": "sha256:" + archive, "workflow_run": {"id": 20, "head_sha": "b" * 40}}
+        self.env = {"GITHUB_EVENT_PATH": str(event), "GITHUB_RUN_ID": "20", "GITHUB_RUN_ATTEMPT": "2",
+                    "GITHUB_SHA": "b" * 40, "BUILD_RECEIPTS": json.dumps(self.outputs)}
+
+    def origins(self):
+        with patch.dict(os.environ, self.env), patch.object(publish, "request", side_effect=self.api.__getitem__):
+            return publish.binary_origins(config, sha, self.files)
+
+    def test_reads_original_attempt_for_each_platform(self):
+        source = self.origins()
+        self.assertEqual(source["check"], {"run": 5, "attempt": 2})
+        self.assertEqual([(row["attempt"], row["artifact"]) for row in source["builds"].values()],
+                         [(2, 32), (1, 31)])
+
+    def test_rejects_mismatched_native_producer_or_checked_source(self):
+        for target, key, bad in [
+            ("actions/artifacts/31", "digest", "sha256:" + "0" * 64),
+            ("actions/artifacts/31", "expired", True),
+            ("actions/artifacts/31", "name", "another-attempt"),
+            ("actions/artifacts/31", "workflow_run", {"id": 21, "head_sha": "b" * 40}),
+            ("actions/runs/20/attempts/1", "run_attempt", 2),
+            ("actions/runs/20/attempts/1", "head_branch", "feature/other"),
+            ("actions/runs/20/attempts/1/jobs?per_page=100", "jobs", []),
+            ("actions/runs/5/attempts/2", "head_sha", "b" * 40),
+        ]:
+            with self.subTest(target=target, key=key), patch.dict(self.api[target], {key: bad}):
+                with self.assertRaises(ValueError):
+                    self.origins()
+        with patch.dict(self.files, {"chrono-pr-macos-aarch64": "0" * 64}):
+            with self.assertRaisesRegex(ValueError, "downloaded bytes differ"):
+                self.origins()
 
 
 class ReleasePlan(unittest.TestCase):
