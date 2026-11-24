@@ -332,6 +332,9 @@ class NextSourceCycle(CopierPromotion):
     def setUp(self):
         super().setUp()
         def release_command(args, **options):
+            if args[-1] == "template-latest-stable-v1":
+                self.assertEqual(json.loads(options["input"]), self.response("/releases?"))
+                return subprocess.CompletedProcess(args, 0, '"v0.1.0"', "")
             if args[-1] != "template-next-version-v1":
                 return subprocess.CompletedProcess(args, 0, "", "")
             observed = json.loads(options["input"])
@@ -362,6 +365,22 @@ class NextSourceCycle(CopierPromotion):
         with patch.object(plan, "api", side_effect=self.response):
             target, _ = plan.next_target(dict(self.config, version="2.0.0"), self.source)
         self.assertEqual(target["version"], "2.0.0")
+
+    def test_all_release_pages_reach_the_selector(self):
+        original = {"tag_name":"v0.1.0", "draft":False, "prerelease":False, "published_at":"date"}
+        rows = [dict(original, tag_name=f"v0.0.{n}") for n in range(100)] + [original]
+        def page(path):
+            if path.endswith("per_page=100&page=1"):
+                return rows[:100]
+            if path.endswith("per_page=100&page=2"):
+                return rows[100:]
+            return self.response(path)
+        def select(command, request):
+            self.assertEqual(command, "template-latest-stable-v1")
+            self.assertEqual(request, rows)
+            return '"v0.1.0"'
+        with patch.object(plan, "api", side_effect=page), patch.object(plan, "judge", side_effect=select):
+            self.assertEqual(plan.latest_source_release(self.source), ("v0.1.0", self.previous))
 
     def test_previously_released_source_is_terminal(self):
         for relation in ("identical", "behind"):

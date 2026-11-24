@@ -106,24 +106,22 @@ CORE = r"(0|[1-9][0-9]*)[.](0|[1-9][0-9]*)[.](0|[1-9][0-9]*)"
 
 
 def latest_source_release(repository):
-    stable = []
+    rows = []
     page = 1
     while True:
         releases = api(f"repos/{repository}/releases?per_page=100&page={page}")
-        for release in releases:
-            match = re.fullmatch("v" + CORE, release["tag_name"])
-            if match and release["published_at"] and not release["draft"] and not release["prerelease"]:
-                stable.append((tuple(map(int, match.groups())), release["tag_name"]))
+        rows.extend({key: release[key] for key in ("tag_name", "draft", "prerelease", "published_at")}
+                    for release in releases)
         if len(releases) < 100:
             break
         page += 1
-    if not stable:
+    tag = json.loads(judge("template-latest-stable-v1", rows))
+    if tag is None:
         return None
-    version, tag = max(stable)
     sha = sha_of(repository, "tags/" + tag)
     require(api(f"repos/{repository}/compare/{sha}...main")["status"] in ("identical", "ahead"),
             "main does not contain the latest source release")
-    return version, tag, sha
+    return tag, sha
 
 
 def next_target(config, repository):
@@ -134,13 +132,13 @@ def next_target(config, repository):
     require(config["kind"] == "copier", "next_patch requires a Copier source product")
     latest = latest_source_release(repository)
     result = judge("template-next-version-v1", {"floor": config["version"],
-                                                "latest": latest[1][1:] if latest else None})
+                                                "latest": latest[0][1:] if latest else None})
     return dict(config, version=json.loads(result)), latest
 
 
 def already_released(repository, latest, sha):
     if latest:
-        _, tag, released = latest
+        tag, released = latest
         relation = api(f"repos/{repository}/compare/{released}...{sha}")["status"]
         require(relation != "diverged", "candidate diverges from the latest stable release")
         if relation in ("identical", "behind"):
