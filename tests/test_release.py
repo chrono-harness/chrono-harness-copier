@@ -57,10 +57,6 @@ class PublishedBinaryRetry(ReleaseAdapterTest):
             release = {"id": 15, "tag_name": tag, "draft": False, "prerelease": True,
                        "assets": [{"name": name, "digest": "sha256:" + digest, "state": "uploaded"}
                                   for name, digest in digests.items()]}
-            config_path = stage / ".chrono-harness" / "release.json"
-            config_path.parent.mkdir()
-            config_path.write_text(json.dumps({"kind": "binary", "binary": binary}))
-
             def download(*args):
                 self.assertEqual(args[:4], ("release", "download", tag, "--dir"))
                 for name in digests:
@@ -72,7 +68,8 @@ class PublishedBinaryRetry(ReleaseAdapterTest):
             prior = Path.cwd()
             try:
                 os.chdir(stage)
-                with patch.dict(os.environ, env), patch.object(publish, "optional", return_value=ref), \
+                with patch.object(publish, "config_at", return_value={"kind": "binary", "binary": binary}) as read_config, \
+                        patch.dict(os.environ, env), patch.object(publish, "optional", return_value=ref), \
                         patch.object(publish, "by_tag", return_value=release), \
                         patch.object(publish, "gh", side_effect=download), \
                         patch.object(publish, "binary_origins", return_value={"source": sha}), \
@@ -104,6 +101,8 @@ class PublishedBinaryRetry(ReleaseAdapterTest):
                             else:
                                 with self.assertRaisesRegex(ValueError, "existing asset differs"):
                                     publish.main()
+                    self.assertTrue(all(call.args == (repository, sha) for call in read_config.call_args_list))
+                    self.assertEqual(read_config.call_count, 3)
             finally:
                 os.chdir(prior)
 
@@ -117,9 +116,6 @@ class DraftPublication(ReleaseAdapterTest):
             root = Path(tmp)
             for suffix in ("macos-aarch64", "linux-x86_64"):
                 (root / ("tool-" + suffix)).write_bytes(suffix.encode())
-            config = root / ".chrono-harness/release.json"
-            config.parent.mkdir()
-            config.write_text(json.dumps({"kind": "binary", "binary": "tool"}))
             env = {"MODE": "preview", "SOURCE_SHA": sha, "TAG": tag, "DIST": tmp}
             mutating = []
             reject = False
@@ -147,7 +143,8 @@ class DraftPublication(ReleaseAdapterTest):
             prior = Path.cwd()
             try:
                 os.chdir(root)
-                with patch.dict(os.environ, env), patch.object(publish, "optional", return_value=ref), \
+                with patch.object(publish, "config_at", return_value={"kind": "binary", "binary": "tool"}), \
+                        patch.dict(os.environ, env), patch.object(publish, "optional", return_value=ref), \
                         patch.object(publish, "request", side_effect=respond), \
                         patch.object(publish, "by_tag", return_value=release), \
                         patch.object(publish, "binary_origins", return_value=None), patch.object(publish, "gh") as gh:
@@ -238,6 +235,19 @@ class BinaryOrigins(ReleaseAdapterTest):
 
 
 class ReleasePlan(ReleaseAdapterTest):
+    def test_late_check_uses_the_version_from_its_checked_source(self):
+        later = "b" * 40
+        configs = {sha: dict(config, version="0.1.3"), later: dict(config, version="0.1.4")}
+        def read(path):
+            if "/contents/" in path:
+                selected = path.rsplit("=", 1)[1]
+                return {"content": base64.b64encode(json.dumps(configs[selected]).encode()).decode()}
+            return {"status": "ahead"} if "/compare/" in path else []
+        with patch.object(plan, "api", side_effect=read):
+            self.assertEqual(plan.event_plan(repository, event, "workflow_run", later)["tag"], "v0.1.3-alpha.15")
+            with self.assertRaisesRegex(ValueError, "commit SHA"):
+                plan.config_at(repository, "dev")
+
     @patch.object(plan, "api", side_effect=lambda path: {"status":"identical"} if "/compare/" in path else [])
     def test_preview_rejects_wrong_events(self, github):
         selected = plan.plan(config, repository, event, "workflow_run")
@@ -345,6 +355,8 @@ class CopierPromotion(ReleaseAdapterTest):
 
     def response(self, path):
         consumer = self.consumer["repository"]
+        if path == f"repos/{self.source}/contents/.chrono-harness/release.json?ref={sha}":
+            return {"content": base64.b64encode(json.dumps(self.config).encode()).decode()}
         if "/git/ref/" in path:
             return {"object": {"type": "commit", "sha": self.adopted if consumer in path else sha}}
         if "/actions/workflows/" in path:
@@ -391,6 +403,12 @@ class CopierPromotion(ReleaseAdapterTest):
         with patch.object(plan, "api", side_effect=self.response):
             return plan.plan(self.config, self.source,
                              {"repository": {"full_name": self.source}, "ref": "refs/heads/dev"}, "workflow_dispatch")
+
+    def test_rejects_dispatch_with_a_different_source_release_config(self):
+        with patch.object(plan, "config_at", return_value=dict(self.config, version="9.9.9")) as source:
+            with self.assertRaisesRegex(ValueError, "different release config"):
+                self.promote()
+        source.assert_called_once_with(self.source, sha)
 
     def test_promotes_the_accepted_source(self):
         result = self.promote()
