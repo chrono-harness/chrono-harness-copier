@@ -40,13 +40,19 @@ jobs:
 {% endraw %}{% if release_plan.kind == "binary" %}{% raw %}  build:
     needs: source
     if: needs.source.outputs.mode == 'preview'
+    name: Build ${{ matrix.platform }}
+    outputs:
+      linux: ${{ steps.producer.outputs.linux }}
+      macos: ${{ steps.producer.outputs.macos }}
     strategy:
       matrix:
         include:
           - runner: macos-15
             platform: macos-aarch64
+            output: macos
           - runner: ubuntu-24.04
             platform: linux-x86_64
+            output: linux
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -74,12 +80,30 @@ jobs:
           mkdir "$RUNNER_TEMP/dist"
           build=$(jq -er .build .chrono-harness/release.json)
           "./$build" "$PLATFORM" "$RUNNER_TEMP/dist"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+      - name: Upload the exercised binary
+        id: archive
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: ${{ matrix.platform }}
+          name: ${{ matrix.platform }}-${{ needs.source.outputs.sha }}-${{ github.run_attempt }}
           path: ${{ runner.temp }}/dist/
           if-no-files-found: error
           retention-days: 1
+      - name: Record the producing attempt and file digest
+        id: producer
+        env:
+          PLATFORM: ${{ matrix.platform }}
+          OUTPUT_KEY: ${{ matrix.output }}
+          ARTIFACT_ID: ${{ steps.archive.outputs.artifact-id }}
+          ARCHIVE_SHA: ${{ steps.archive.outputs.artifact-digest }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary=$(jq -er .binary .chrono-harness/release.json)
+          digest=$(shasum -a 256 "$RUNNER_TEMP/dist/$binary-$PLATFORM" | cut -d ' ' -f 1)
+          receipt=$(jq -cn --arg id "$ARTIFACT_ID" --arg archive "$ARCHIVE_SHA" --arg file "$digest" \
+            --arg run "$GITHUB_RUN_ID" --arg attempt "$GITHUB_RUN_ATTEMPT" \
+            '{id:$id,archive:$archive,file:$file,run:$run,attempt:$attempt}')
+          echo "$OUTPUT_KEY=$receipt" >> "$GITHUB_OUTPUT"
 {% endraw %}{% endif %}{% raw %}  publish:
 {% endraw %}{% if release_plan.kind == "binary" %}{% raw %}    needs: [source, build]
     if: >-
@@ -103,6 +127,7 @@ jobs:
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           path: ${{ runner.temp }}/dist
+          artifact-ids: ${{ fromJSON(needs.build.outputs.linux).id }},${{ fromJSON(needs.build.outputs.macos).id }}
           merge-multiple: true
 {% endraw %}{% endif %}{% raw %}      - name: Verify and publish the selected release
         env:
@@ -112,6 +137,7 @@ jobs:
           TAG: ${{ needs.source.outputs.tag }}
           PREVIEW: ${{ needs.source.outputs.preview }}
           PROOF: ${{ needs.source.outputs.proof }}
-          DIST: ${{ runner.temp }}/dist
+{% endraw %}{% if release_plan.kind == "binary" %}{% raw %}          BUILD_RECEIPTS: ${{ toJSON(needs.build.outputs) }}
+{% endraw %}{% endif %}{% raw %}          DIST: ${{ runner.temp }}/dist
         run: python3 .github/release/publish.py
 {% endraw %}
