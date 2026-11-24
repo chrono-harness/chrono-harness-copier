@@ -28,7 +28,8 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
-{% endraw %}{% if release_plan.kind == "copier" %}{% raw %}      - name: Install the Copier answers parser
+{% endraw %}{% include 'release-tool-step.jinja' %}
+{% raw %}{% endraw %}{% if release_plan.kind == "copier" %}{% raw %}      - name: Install the Copier answers parser
         run: |
           python3 -m venv "$RUNNER_TEMP/release-python"
           "$RUNNER_TEMP/release-python/bin/pip" install PyYAML==6.0.3
@@ -129,7 +130,8 @@ jobs:
           path: ${{ runner.temp }}/dist
           artifact-ids: ${{ fromJSON(needs.build.outputs.linux).id }},${{ fromJSON(needs.build.outputs.macos).id }}
           merge-multiple: true
-{% endraw %}{% endif %}{% raw %}      - name: Verify and publish the selected release
+{% endraw %}{% include 'release-tool-step.jinja' %}
+{% raw %}{% endraw %}{% endif %}{% raw %}      - name: Verify and publish the selected release
         env:
           GH_TOKEN: ${{ github.token }}
           MODE: ${{ needs.source.outputs.mode }}

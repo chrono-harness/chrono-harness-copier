@@ -28,6 +28,16 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
         with:
           persist-credentials: false
+      - name: Install the release verifier
+        shell: bash
+        run: |
+          set -euo pipefail
+          directory=$(mktemp -d "$RUNNER_TEMP/release-tool.XXXXXXXX")
+          curl --fail --silent --show-error --location "https://github.com/chrono-harness/chrono-harness-host-release/releases/download/v0.1.0-alpha.6/chrono-host-release-linux-x86_64" -o "$directory/chrono-host-release"
+          (cd "$directory" && echo "e75e4e3a7987c99f585e559de3fbe4da9e490609271ec5867877150932f07597  chrono-host-release" | sha256sum --check --status)
+          chmod 755 "$directory/chrono-host-release"
+          echo "$directory" >> "$GITHUB_PATH"
+
       - name: Install the Copier answers parser
         run: |
           python3 -m venv "$RUNNER_TEMP/release-python"
