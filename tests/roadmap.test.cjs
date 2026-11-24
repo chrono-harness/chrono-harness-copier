@@ -13,7 +13,9 @@ function mockRoadmap(t) {
     const input = JSON.parse(options.input)
     assert.deepEqual(input, expected.input)
     if (expected.error) throw expected.error
-    return JSON.stringify(expected.output)
+    const output = JSON.stringify(expected.output)
+    assert.ok(Buffer.byteLength(output) <= options.maxBuffer)
+    return output
   })
   t.after(() => assert.deepEqual(requests, []))
   return (input, output, error, command = 'roadmap-v1') => requests.push({input, output, error, command})
@@ -50,13 +52,26 @@ test('new work, release publication, closing and reopening reconcile against cur
   const github = {rest: {issues, repos: {listReleases: () => releases}}, paginate: async (fn, args) => [...fn(args)]}
   const defaults = {version: '1.2.0'}
   const run = (selected, numbers, state, plan = defaults, version) => {
-    const snapshots = releases.map(({draft, published_at}) => JSON.parse(JSON.stringify({draft, published_at})))
-    reply({operation: 'published', releases: snapshots}, selected)
     if (version) {
       const tags = releases.map(({tag_name, draft, prerelease, published_at}) =>
         JSON.parse(JSON.stringify({tag_name, draft, prerelease, published_at})))
       reply(tags, version.latest ? 'v' + version.latest : null, undefined, 'template-latest-stable-v1')
       reply({floor: plan.version, latest: version.latest}, version.target, undefined, 'template-next-version-v1')
+    }
+    if (numbers !== null) {
+      const target = version?.target ?? plan?.version
+      const titles = new Set(milestones.map(m => m.title))
+      if (target) titles.add('v' + target)
+      const tags = releases.map(({tag_name, draft, prerelease, published_at}) =>
+        JSON.parse(JSON.stringify({tag_name, draft, prerelease, published_at})))
+      const expected = Object.fromEntries([...titles].map(title => [title, {
+        final: title === 'v1.2.0' && selected.includes(2) ? 2 : null,
+        preview: title === 'v1.2.0' && selected.includes(0) ? 0 : null,
+      }]))
+      reply({operation: 'release-selection', releases: tags, milestones: [...titles]}, {
+        tag: selected.length ? releases[selected[selected.length - 1]].tag_name : null,
+        milestones: expected,
+      })
     }
     if (numbers !== null) {
       const rows = issues.listForRepo().map(({number, state, pull_request, milestone}) =>
@@ -167,9 +182,22 @@ test('a failed publication owns one issue and its successful retry closes it', a
   await notify(null)
 })
 
+test('selection output fits when the repository has many unreleased milestones', async t => {
+  const reply = mockRoadmap(t)
+  const milestones = Array.from({length: 100}, (_, i) => ({title: 'v1.0.' + i}))
+  const titles = milestones.map(m => m.title)
+  reply({operation: 'release-selection', releases: [], milestones: titles}, {
+    tag: null, milestones: Object.fromEntries(titles.map(title => [title, {final: null, preview: null}])),
+  })
+  reply({operation: 'unassigned', issues: []}, [])
+  const issues = {listMilestones: () => milestones, listForRepo: () => []}
+  const github = {rest: {issues, repos: {listReleases: () => []}}, paginate: fn => fn()}
+  await sync(github, {repo: {}, payload: {}}, null)
+})
+
 test('a failed decision aborts before any GitHub write', async t => {
   const reply = mockRoadmap(t)
-  reply({operation: 'published', releases: []}, null, new Error('tool exited 2'))
-  const github = {rest:{issues:{}, repos:{listReleases: () => []}}, paginate: fn => fn()}
+  reply({operation: 'release-selection', releases: [], milestones: []}, null, new Error('tool exited 2'))
+  const github = {rest:{issues:{listMilestones: () => []}, repos:{listReleases: () => []}}, paginate: fn => fn()}
   await assert.rejects(sync(github, {repo:{}, payload:{}}, null), /tool exited 2/)
 })
