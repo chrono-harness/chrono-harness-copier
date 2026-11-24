@@ -3,33 +3,37 @@ _subdirectory: scaffold
 _preserve_symlinks: true
 _skip_if_exists: [.chrono-harness/rules.json]
 _answers_file: .chrono-harness/template-answers.yml
+tool_dependencies:
+  type: yaml
+  when: false
+  default:
+    cache: [chrono-cache, chrono-harness]
+    ci: [chrono-ci]
+    diagnostics: [chrono-diagnostics]
+    distribution: [chrono-distribution]
+    harness: [chrono-harness]
+    host-bootstrap: [chrono-harness, chrono-host-bootstrap, chrono-judge-registration]
+    host-release: [chrono-harness, chrono-host-bootstrap, chrono-host-release, chrono-judge-registration]
+    inputs: [chrono-harness, chrono-inputs, chrono-judge-filemap, chrono-judge-mixed, chrono-judge-registration, chrono-judge-routes]
+    instructions: [chrono-instructions]
+    judge-ci: [chrono-harness, chrono-judge-ci, chrono-judge-filemap, chrono-judge-mixed, chrono-judge-projects, chrono-judge-registration, chrono-judge-routes]
+    judge-cost: [chrono-harness, chrono-judge-cost, chrono-judge-filemap, chrono-judge-registration]
+    judge-filemap: [chrono-harness, chrono-judge-filemap, chrono-judge-mixed, chrono-judge-registration]
+    judge-mixed: [chrono-harness, chrono-judge-mixed, chrono-judge-registration]
+    judge-projects: [chrono-harness, chrono-judge-filemap, chrono-judge-projects, chrono-judge-registration, chrono-judge-routes]
+    registration: [chrono-harness, chrono-judge-registration, chrono-judge-routes]
+    judge-routes: [chrono-harness, chrono-judge-filemap, chrono-judge-registration, chrono-judge-routes]
+    judge-workflow: [chrono-harness, chrono-judge-projects, chrono-judge-registration, chrono-judge-routes, chrono-judge-workflow]
+    pr: [chrono-pr]
+    test-git: [chrono-test-git, chrono-test-git-profile]
+    worktree: [chrono-worktree]
+    verus: [rust, verus]
 features:
   type: str
   multiselect: true
   help: 默认安装全部工具。按空格取消本仓不需要的工具，回车确认。组件介绍见 https://github.com/chrono-harness/chrono-harness-main
-  default: &available_tools
-    - cache
-    - ci
-    - diagnostics
-    - distribution
-    - harness
-    - host-bootstrap
-    - host-release
-    - inputs
-    - instructions
-    - judge-ci
-    - judge-cost
-    - judge-filemap
-    - judge-mixed
-    - judge-projects
-    - registration
-    - judge-routes
-    - judge-workflow
-    - pr
-    - test-git
-    - worktree
-    - verus
-  choices: *available_tools
+  default: "{{ tool_dependencies | list }}"
+  choices: "{{ tool_dependencies | list }}"
 project_guide:
   type: str
   multiline: true

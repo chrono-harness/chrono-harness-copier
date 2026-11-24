@@ -42,12 +42,23 @@ assert default_config["tasks"]["harness-setup"]["run"] == [
     "mise install", "mise exec -- chrono-instructions sync-rules --host-root ."
 ]
 assert config["tasks"]["harness-setup"]["run"] == "mise install"
-default_tools = default_config["tools"]
+default_tools = default_config["tools"].copy()
 assert default_tools == tomllib.loads(manifest.read_text())["tools"]
 assert default_tools.pop("rust") == {"version": "1.95.0", "profile": "minimal"}
 assert set(default_tools) == set(expected)
 for tool in default_tools.values():
     assert set(tool["platforms"]) == {"linux-x64", "macos-arm64"}
+
+for name, expected_tools in (
+    ("verus", {"rust", "http:verus"}),
+    ("judge-ci-verus", set(tomllib.loads((judge_ci / manifest).read_text())["tools"]) | {"rust", "http:verus"}),
+):
+    rendered = full.parent / name
+    dependencies = tomllib.loads((rendered / manifest).read_text())["tools"]
+    assert set(dependencies) == expected_tools
+    for tool, value in dependencies.items():
+        assert value == default_config["tools"][tool]
+    assert "tool_dependencies:" not in (rendered / ".chrono-harness/template-answers.yml").read_text()
 
 assert "业务源码位于 src/。" in (selected / "AGENTS.md").read_text()
 for host, commands in [
