@@ -51,18 +51,20 @@ for tool in default_tools.values():
 
 assert "业务源码位于 src/。" in (selected / "AGENTS.md").read_text()
 for host, commands in [
+    (full.parent / "cache", {"chrono-cache", "chrono-harness"}),
+    (full.parent / "registration", {"chrono-judge-registration", "chrono-judge-routes", "chrono-harness"}),
     (diagnostics, {"chrono-diagnostics"}),
     (test_git, {"chrono-test-git", "chrono-test-git-profile"}),
     (worktree, {"chrono-worktree"}),
     (bootstrap, {"chrono-harness", "chrono-host-bootstrap", "chrono-judge-registration"}),
     (release, {"chrono-harness", "chrono-host-release", "chrono-host-bootstrap", "chrono-judge-registration"}),
     (inputs, {"chrono-harness", "chrono-inputs", "chrono-judge-registration", "chrono-judge-routes", "chrono-judge-filemap", "chrono-judge-mixed"}),
-    (workflow, {"chrono-judge-workflow", "chrono-judge-projects", "chrono-judge-routes", "chrono-judge-registration"}),
-    (projects, {"chrono-judge-projects", "chrono-judge-filemap", "chrono-judge-routes", "chrono-judge-registration"}),
+    (workflow, {"chrono-harness", "chrono-judge-workflow", "chrono-judge-projects", "chrono-judge-routes", "chrono-judge-registration"}),
+    (projects, {"chrono-harness", "chrono-judge-projects", "chrono-judge-filemap", "chrono-judge-routes", "chrono-judge-registration"}),
     (judge_ci, {"chrono-harness", "chrono-judge-ci", "chrono-judge-projects", "chrono-judge-filemap", "chrono-judge-routes", "chrono-judge-mixed", "chrono-judge-registration"}),
     (mixed, {"chrono-harness", "chrono-judge-mixed", "chrono-judge-registration"}),
     (filemap, {"chrono-harness", "chrono-judge-filemap", "chrono-judge-mixed", "chrono-judge-registration"}),
-    (routes, {"chrono-judge-routes", "chrono-judge-filemap", "chrono-judge-registration"}),
+    (routes, {"chrono-harness", "chrono-judge-routes", "chrono-judge-filemap", "chrono-judge-registration"}),
     (cost, {"chrono-harness", "chrono-judge-cost", "chrono-judge-filemap", "chrono-judge-registration"}),
 ]:
     assert (host / "AGENTS.md").read_text().splitlines()[0] == "# chrono-harness/chrono-harness-copier 工作说明"
