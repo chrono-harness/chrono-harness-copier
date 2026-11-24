@@ -25,7 +25,7 @@ cmp .github/workflows/release.yml "$stage/copier/.github/workflows/release.yml"
 grep -q '^  build:' "$stage/binary/.github/workflows/release.yml"
 test ! -e "$stage/empty/.github/workflows/release.yml"
 test ! -e "$stage/empty/.github/release"
-for tool in diagnostics host-bootstrap host-release inputs judge-routes judge-cost worktree judge-filemap judge-mixed judge-projects judge-ci judge-workflow test-git; do
+for tool in cache registration diagnostics host-bootstrap host-release inputs judge-routes judge-cost worktree judge-filemap judge-mixed judge-projects judge-ci judge-workflow test-git; do
   uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
     -d repository=chrono-harness/chrono-harness-copier -d "features=[\"$tool\"]" . "$stage/$tool"
 done
