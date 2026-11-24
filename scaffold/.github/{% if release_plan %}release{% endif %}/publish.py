@@ -83,25 +83,25 @@ def main():
     dist.mkdir(exist_ok=True)
     stable = mode == "stable"
     release = by_tag(tag)
+    if not stable and binary:
+        names = [binary + "-macos-aarch64", binary + "-linux-x86_64"]
+        (dist / "SHA256SUMS").write_text("".join(hashlib.sha256((dist/name).read_bytes()).hexdigest()
+                                                  + "  " + name + "\n" for name in names))
     if stable:
         parent = os.environ["PREVIEW"]
         require(sha_of(repo, "tags/" + parent) == sha, "preview tag moved")
         if binary:
             gh("release", "download", parent, "--dir", dist)
-    elif release and not release["draft"]:
-        # A retried build may produce different bytes. The original release is immutable.
+    digests = sums(dist, binary) if binary else {}
+    if not stable and release and not release["draft"]:
         require(sha_of(repo, "tags/" + tag) == sha, "preview tag moved")
         with tempfile.TemporaryDirectory() as tmp:
             if binary:
                 gh("release", "download", tag, "--dir", tmp)
             expected = sums(Path(tmp), binary) if binary else {}
             require(recorded(release, tag, True) == expected, "invalid published preview")
+            require(digests == expected, "retry assets differ from the published preview")
         return
-    if not stable and binary:
-        names = [binary + "-macos-aarch64", binary + "-linux-x86_64"]
-        (dist / "SHA256SUMS").write_text("".join(hashlib.sha256((dist/name).read_bytes()).hexdigest()
-                                                  + "  " + name + "\n" for name in names))
-    digests = sums(dist, binary) if binary else {}
     if stable:
         preview = request("releases/tags/" + parent)
         require(not preview["draft"] and recorded(preview, parent, True) == digests, "preview bytes changed")
