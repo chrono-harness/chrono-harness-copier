@@ -265,6 +265,7 @@ class BinaryOrigins(ReleaseAdapterTest):
         event = Path(self.temp.name) / "event.json"
         event.write_text(json.dumps({"workflow_run": {"id": 5, "run_attempt": 2}}))
         self.api = {"actions/runs/5/attempts/2": dict(run, id=5, run_attempt=2)}
+        self.extra_jobs = [{"id": index, "name": "other"} for index in range(100)]
         self.outputs = {}
         self.files = {}
         for key, platform, attempt, artifact in (("linux", "linux-x86_64", 1, 31),
@@ -289,9 +290,16 @@ class BinaryOrigins(ReleaseAdapterTest):
                     "GITHUB_SHA": "b" * 40, "BUILD_RECEIPTS": json.dumps(self.outputs)}
 
     def origins(self):
-        with patch.dict(os.environ, self.env), patch.object(publish, "request", side_effect=self.api.__getitem__) as get:
+        pages_read = []
+        def job_pages(args):
+            path = args[-1].removeprefix("repos/" + repository + "/")
+            self.assertEqual(args, ["gh", "api", "--paginate", "--slurp", f"repos/{repository}/{path}"])
+            pages_read.append(path)
+            return json.dumps([{"jobs": self.extra_jobs}, self.api[path]])
+        with patch.dict(os.environ, self.env), patch.object(publish, "request", side_effect=self.api.__getitem__) as get, \
+                patch.object(plan.subprocess, "check_output", side_effect=job_pages):
             receipt = publish.binary_origins(config, sha, self.files)
-        return receipt, [call.args[0] for call in get.call_args_list]
+        return receipt, [call.args[0] for call in get.call_args_list] + pages_read
 
     def test_forwards_observed_metadata_and_downloaded_bytes(self):
         receipt = {"source": sha, "check": {"run": 5, "attempt": 2}, "builds": {"owner": "receipt"}}
@@ -316,7 +324,7 @@ class BinaryOrigins(ReleaseAdapterTest):
                         "selected_run": 20, "attempt": int(selected["attempt"]), "artifact_id": int(selected["id"]),
                         "archive": selected["archive"], "file": selected["file"],
                         "downloaded": self.files["chrono-pr-" + platform], "run": self.api[path],
-                        "jobs": self.api[path + "/jobs?per_page=100"]["jobs"],
+                        "jobs": self.extra_jobs + self.api[path + "/jobs?per_page=100"]["jobs"],
                         "artifact": self.api["actions/artifacts/" + selected["id"]],
                     }
                 self.assertEqual(request, expected)
@@ -421,8 +429,11 @@ class ReleasePlan(ReleaseAdapterTest):
              "steps":[{"name":"exercise","conclusion":"success"}]}
         checked=dict(run,id=1,run_attempt=1)
         jobs=[job,dict(job,name="linux")]
-        with patch.object(plan,"api",return_value={"jobs":jobs}):
+        pages = json.dumps([{"jobs": jobs[:1]}, {"jobs": jobs[1:]}])
+        with patch.object(plan.subprocess, "check_output", return_value=pages) as get:
             plan.check_acceptance("example/org",checked,consumer)
+            get.assert_called_once_with(["gh", "api", "--paginate", "--slurp",
+                                         "repos/example/org/actions/runs/1/attempts/1/jobs?per_page=100"])
             self.assertEqual(self.owner.call_args.args[0], ["chrono-host-release", "template-acceptance-v1"])
             self.assertEqual(json.loads(self.owner.call_args.kwargs["input"]),
                              {"jobs": jobs, "sha": sha, "required_jobs": ["mac", "linux"], "step": "exercise"})
@@ -521,7 +532,11 @@ class CopierPromotion(ReleaseAdapterTest):
         self.owner.side_effect = select
 
     def promote(self):
-        with patch.object(plan, "api", side_effect=self.response):
+        def job_pages(args):
+            self.assertEqual(args[:4], ["gh", "api", "--paginate", "--slurp"])
+            return json.dumps([self.response(args[4])])
+        with patch.object(plan, "api", side_effect=self.response), \
+                patch.object(plan.subprocess, "check_output", side_effect=job_pages):
             return plan.plan(self.config, self.source,
                              {"repository": {"full_name": self.source}, "ref": "refs/heads/dev"}, "workflow_dispatch")
 
