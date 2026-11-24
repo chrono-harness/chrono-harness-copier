@@ -25,10 +25,12 @@ cmp .github/workflows/release.yml "$stage/copier/.github/workflows/release.yml"
 grep -q '^  build:' "$stage/binary/.github/workflows/release.yml"
 test ! -e "$stage/empty/.github/workflows/release.yml"
 test ! -e "$stage/empty/.github/release"
-for tool in cache registration diagnostics host-bootstrap host-release inputs judge-routes judge-cost worktree judge-filemap judge-mixed judge-projects judge-ci judge-workflow test-git; do
+for tool in cache registration diagnostics host-bootstrap host-release inputs judge-routes judge-cost worktree judge-filemap judge-mixed judge-projects judge-ci judge-workflow test-git verus; do
   uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
     -d repository=chrono-harness/chrono-harness-copier -d "features=[\"$tool\"]" . "$stage/$tool"
 done
+uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
+  -d 'features=["judge-ci","verus"]' . "$stage/judge-ci-verus"
 uv run --no-project --python ">=3.11" python tests/check_render.py "$stage/empty" "$stage/selected" "$stage/default" "$stage/diagnostics" "$stage/host-bootstrap" "$stage/host-release" "$stage/inputs" "$stage/judge-routes" "$stage/judge-cost" "$stage/worktree" "$stage/judge-filemap" "$stage/judge-mixed" "$stage/judge-projects" "$stage/judge-ci" "$stage/judge-workflow" "$stage/test-git"
 
 # Exercise a real host that edits its guide and later changes its tool choices.
