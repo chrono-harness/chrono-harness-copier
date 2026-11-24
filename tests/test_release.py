@@ -209,6 +209,7 @@ class ReleasePlan(ReleaseAdapterTest):
             self.reject("wrong platform")
             with self.assertRaises(ValueError):
                 plan.pin_manifest(repository, "chrono-pr", version, wrong)
+        self.owner.return_value = subprocess.CompletedProcess([], 0, "", "")
         release = {"tag_name":tag,"draft":False,"prerelease":True,
                    "assets":[{"name":name,"state":"uploaded","digest":digest}
                              for name in [*checks,"SHA256SUMS"]]}
