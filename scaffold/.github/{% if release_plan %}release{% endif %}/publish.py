@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from plan import check_release, check_run, require, sha_of
+from plan import check_release, check_run, judge, require
 
 
 repo = os.environ["GITHUB_REPOSITORY"]
@@ -36,13 +36,15 @@ def by_tag(tag):
     if public is not None:
         return public
     page = 1
+    found = None
     while True:
         releases = request(f"releases?per_page=100&page={page}")
         for release in releases:
             if release["tag_name"] == tag:
-                return release
+                require(found is None, "ambiguous existing release")
+                found = release
         if len(releases) < 100:
-            return None
+            return found
         page += 1
 
 
@@ -54,17 +56,21 @@ def sums(directory, binary):
     names = [binary + "-macos-aarch64", binary + "-linux-x86_64"]
     expected = {name: hashlib.sha256((directory / name).read_bytes()).hexdigest() for name in names}
     lines = (directory / "SHA256SUMS").read_text().splitlines()
-    require(sorted(lines) == sorted(digest + "  " + name for name, digest in expected.items()),
-            "asset checksums differ from SHA256SUMS")
+    judge("template-publication-v1", {"kind": "checksums", "lines": lines,
+                                     "expected": [digest + "  " + name for name, digest in expected.items()]})
     expected["SHA256SUMS"] = hashlib.sha256((directory / "SHA256SUMS").read_bytes()).hexdigest()
     return expected
 
 
-def tag_at(tag, sha):
-    ref = optional("git/ref/tags/" + tag)
-    if ref is None:
-        request("git/refs", method="POST", data=json.dumps({"ref": "refs/tags/" + tag, "sha": sha}).encode())
-    require(sha_of(repo, "tags/" + tag) == sha, "tag points to different source")
+def check_ref(name, sha, reference):
+    judge("template-publication-v1", {"kind": "ref", "source": sha, "name": "refs/" + name,
+                                     "reference": reference})
+
+
+def publication_state(tag, sha, prerelease, assets, release):
+    return json.loads(judge("template-publication-v1", {"kind": "state", "source": sha, "tag": tag,
+                            "reference": optional("git/ref/tags/" + tag), "prerelease": prerelease,
+                            "release": release, "assets": assets}))
 
 
 def binary_origins(config, sha, digests):
@@ -130,54 +136,54 @@ def main():
                                                   + "  " + name + "\n" for name in names))
     if stable:
         parent = os.environ["PREVIEW"]
-        require(sha_of(repo, "tags/" + parent) == sha, "preview tag moved")
+        check_ref("tags/" + parent, sha, request("git/ref/tags/" + parent))
         if binary:
             gh("release", "download", parent, "--dir", dist)
     digests = sums(dist, binary) if binary else {}
     assets = {name: "sha256:" + digest for name, digest in digests.items()}
     origins = binary_origins(config, sha, digests) if binary and not stable else None
-    if not stable and release and not release["draft"]:
-        require(sha_of(repo, "tags/" + tag) == sha, "preview tag moved")
-        with tempfile.TemporaryDirectory() as tmp:
-            if binary:
-                gh("release", "download", tag, "--dir", tmp)
-            expected = sums(Path(tmp), binary) if binary else {}
-            require(digests == expected, "retry assets differ from the published preview")
-            check_release(release, tag, True, False, assets)
-        return
     if stable:
-        preview = request("releases/tags/" + parent)
-        check_release(preview, parent, True, False, assets)
-        if release:
-            require(sha_of(repo, "tags/" + tag) == sha, "stable tag points to a different source")
-            if not release["draft"]:
-                check_release(release, tag, False, False, assets)
-                require(sha_of(repo, "heads/main") == sha, "main differs from published stable")
-                return
-        # GitHub rejects a non-fast-forward update. Check again at the point of publication.
-        if sha_of(repo, "heads/main") != sha:
-            request("git/refs/heads/main", method="PATCH", data=json.dumps({"sha": sha, "force": False}).encode())
-        require(sha_of(repo, "heads/main") == sha, "main differs from preview")
-    tag_at(tag, sha)
+        check_release(request("releases/tags/" + parent), parent, True, False, assets)
+    decision = publication_state(tag, sha, not stable, digests, release)
+    if decision["action"] == "replay":
+        if binary:
+            with tempfile.TemporaryDirectory() as tmp:
+                gh("release", "download", tag, "--dir", tmp)
+                downloaded = sums(Path(tmp), binary)
+                check_release(release, tag, not stable, False,
+                              {name: "sha256:" + digest for name, digest in downloaded.items()})
+        if stable:
+            check_ref("heads/main", sha, request("git/ref/heads/main"))
+        return
+    if decision["create_tag"]:
+        request("git/refs", method="POST", data=json.dumps({"ref": "refs/tags/" + tag, "sha": sha}).encode())
+    check_ref("tags/" + tag, sha, request("git/ref/tags/" + tag))
     notes = ("Verified preview " + os.environ["PREVIEW"] + "\nConsumer acceptance: " + os.environ["PROOF"]
                  if stable else "Preview of " + sha)
     if origins:
         notes += "\n\nBuild origins\n\n```json\n" + json.dumps(origins, sort_keys=True, indent=2) + "\n```"
-    if release is None:
+    if decision["action"] == "create":
         release = request("releases", method="POST", data=json.dumps({
-            "tag_name":tag, "name":tag, "body":notes, "draft":True, "prerelease":not stable
+            "tag_name":tag, "target_commitish":sha, "name":tag, "body":notes, "draft":True, "prerelease":not stable
         }).encode())
-    else:
-        require(release["draft"], "expected an incomplete draft")
-        if origins and release.get("body") != notes:
-            request(f"releases/{release['id']}", method="PATCH", data=json.dumps({"body": notes}).encode())
-    if digests:
-        gh("release", "upload", tag, *[dist / n for n in digests], "--clobber")
     address = f"releases/{release['id']}"
+    current = request(address)
+    decision = publication_state(tag, sha, not stable, digests, current)
+    require(decision["action"] == "resume", "expected a verified draft")
+    if origins and current.get("body") != notes:
+        request(address, method="PATCH", data=json.dumps({"body": notes}).encode())
+    if decision["missing"]:
+        gh("release", "upload", tag, *[dist / name for name in decision["missing"]])
     draft = request(address)
     check_release(draft, tag, not stable, True, assets)
     if origins:
         require(draft.get("body") == notes, "different build origins on draft")
+    check_ref("tags/" + tag, sha, request("git/ref/tags/" + tag))
+    if stable:
+        main = request("git/ref/heads/main")
+        if main["object"]["sha"] != sha:
+            request("git/refs/heads/main", method="PATCH", data=json.dumps({"sha": sha, "force": False}).encode())
+        check_ref("heads/main", sha, request("git/ref/heads/main"))
     published = request(address, method="PATCH", data=b'{"draft":false}')
     check_release(published, tag, not stable, False, assets)
 

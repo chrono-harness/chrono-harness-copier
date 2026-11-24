@@ -54,7 +54,7 @@ class PublishedBinaryRetry(ReleaseAdapterTest):
                 hashlib.sha256((published / name).read_bytes()).hexdigest() + "  " + name + "\n"
                 for name in names))
             digests = publish.sums(published, binary)
-            release = {"tag_name": tag, "draft": False, "prerelease": True,
+            release = {"id": 15, "tag_name": tag, "draft": False, "prerelease": True,
                        "assets": [{"name": name, "digest": "sha256:" + digest, "state": "uploaded"}
                                   for name, digest in digests.items()]}
             config_path = stage / ".chrono-harness" / "release.json"
@@ -67,10 +67,12 @@ class PublishedBinaryRetry(ReleaseAdapterTest):
                     shutil.copyfile(published / name, Path(args[4]) / name)
 
             env = {"MODE": "preview", "TAG": tag, "SOURCE_SHA": sha, "DIST": str(submitted)}
+            ref = {"ref": "refs/tags/" + tag, "object": {"type": "commit", "sha": sha}}
+            expected = {name: "sha256:" + digest for name, digest in digests.items()}
             prior = Path.cwd()
             try:
                 os.chdir(stage)
-                with patch.dict(os.environ, env), patch.object(publish, "sha_of", return_value=sha), \
+                with patch.dict(os.environ, env), patch.object(publish, "optional", return_value=ref), \
                         patch.object(publish, "by_tag", return_value=release), \
                         patch.object(publish, "gh", side_effect=download), \
                         patch.object(publish, "binary_origins", return_value={"source": sha}), \
@@ -80,17 +82,85 @@ class PublishedBinaryRetry(ReleaseAdapterTest):
                             for name in names:
                                 data = (published / name).read_bytes()
                                 (submitted / name).write_bytes(data + b"!" if changed == name else data)
+                            def verify(args, **kwargs):
+                                data = json.loads(kwargs["input"])
+                                if args[-1] == "template-publication-v1" and data["kind"] == "state":
+                                    self.assertEqual(data["reference"], ref)
+                                    self.assertEqual(data["release"], release)
+                                    self.assertEqual(data["source"], sha)
+                                    if changed is not None:
+                                        self.assertNotEqual(data["assets"][changed], digests[changed])
+                                        return subprocess.CompletedProcess(args, 2, "", "existing asset differs")
+                                    self.assertEqual(data["assets"], digests)
+                                    return subprocess.CompletedProcess(args, 0,
+                                        json.dumps({"action": "replay", "missing": [], "create_tag": False}), "")
+                                if args[-1] == "template-release-v1":
+                                    self.assertEqual(data, {"release": release, "tag": tag, "assets": expected,
+                                                            "prerelease": True, "draft": False})
+                                return subprocess.CompletedProcess(args, 0, "", "")
+                            self.owner.side_effect = verify
                             if changed is None:
                                 publish.main()
-                                self.assertEqual(self.owner.call_args.args[0],
-                                                 ["chrono-host-release", "template-release-v1"])
-                                self.assertEqual(json.loads(self.owner.call_args.kwargs["input"]), {
-                                    "release": release, "tag": tag, "draft": False, "prerelease": True,
-                                    "assets": {name: "sha256:" + value for name, value in digests.items()},
-                                })
                             else:
-                                with self.assertRaisesRegex(ValueError, "retry assets differ"):
+                                with self.assertRaisesRegex(ValueError, "existing asset differs"):
                                     publish.main()
+            finally:
+                os.chdir(prior)
+
+
+class DraftPublication(ReleaseAdapterTest):
+    def test_resumes_only_missing_assets_and_verifies_before_writing(self):
+        tag = "v0.1.0-alpha.15"
+        ref = {"ref": "refs/tags/" + tag, "object": {"type": "commit", "sha": sha}}
+        release = {"tag_name": tag, "id": 12, "draft": True, "prerelease": True, "assets": []}
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for suffix in ("macos-aarch64", "linux-x86_64"):
+                (root / ("tool-" + suffix)).write_bytes(suffix.encode())
+            config = root / ".chrono-harness/release.json"
+            config.parent.mkdir()
+            config.write_text(json.dumps({"kind": "binary", "binary": "tool"}))
+            env = {"MODE": "preview", "SOURCE_SHA": sha, "TAG": tag, "DIST": tmp}
+            mutating = []
+            reject = False
+
+            def respond(path, **options):
+                if options:
+                    mutating.append((path, options["method"]))
+                if path == "git/ref/tags/" + tag:
+                    return ref
+                self.assertEqual(path, "releases/12")
+                return dict(release, draft=not bool(options))
+
+            def verify(args, **options):
+                data = json.loads(options["input"])
+                if args[-1] == "template-publication-v1" and data["kind"] == "state":
+                    self.assertEqual(data["release"], release)
+                    self.assertEqual((data["reference"], data["source"]), (ref, sha))
+                    if reject:
+                        return subprocess.CompletedProcess(args, 2, "", "existing asset differs")
+                    return subprocess.CompletedProcess(args, 0, json.dumps({
+                        "action": "resume", "create_tag": False, "missing": ["tool-linux-x86_64"]}), "")
+                return subprocess.CompletedProcess(args, 0, "", "")
+
+            self.owner.side_effect = verify
+            prior = Path.cwd()
+            try:
+                os.chdir(root)
+                with patch.dict(os.environ, env), patch.object(publish, "optional", return_value=ref), \
+                        patch.object(publish, "request", side_effect=respond), \
+                        patch.object(publish, "by_tag", return_value=release), \
+                        patch.object(publish, "binary_origins", return_value=None), patch.object(publish, "gh") as gh:
+                    publish.main()
+                    gh.assert_called_once_with("release", "upload", tag, root / "tool-linux-x86_64")
+                    self.assertEqual(mutating, [("releases/12", "PATCH")])
+                    mutating.clear()
+                    gh.reset_mock()
+                    reject = True
+                    with self.assertRaisesRegex(ValueError, "existing asset differs"):
+                        publish.main()
+                    gh.assert_not_called()
+                    self.assertEqual(mutating, [])
             finally:
                 os.chdir(prior)
 
