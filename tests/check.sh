@@ -21,6 +21,10 @@ for kind in copier binary; do
   cmp .github/release/plan.py "$stage/$kind/.github/release/plan.py"
   cmp .github/release/publish.py "$stage/$kind/.github/release/publish.py"
 done
+# A host can keep roadmap automation while opting out of every locally installed tool.
+test ! -e "$stage/copier/.config/mise/conf.d/chrono-harness.toml"
+cmp .github/roadmap.cjs "$stage/copier/.github/roadmap.cjs"
+cmp .github/workflows/issue-roadmap.yml "$stage/copier/.github/workflows/issue-roadmap.yml"
 cmp .github/workflows/release.yml "$stage/copier/.github/workflows/release.yml"
 grep -q '^  build:' "$stage/binary/.github/workflows/release.yml"
 test ! -e "$stage/empty/.github/workflows/release.yml"

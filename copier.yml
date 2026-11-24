@@ -7,9 +7,9 @@ host_release_artifact:
   type: yaml
   when: false
   default:
-    version: "0.1.0-alpha.6"
-    linux_sha256: "e75e4e3a7987c99f585e559de3fbe4da9e490609271ec5867877150932f07597"
-    macos_sha256: "7aa0e2d10c4c9d9d38dca81158e9bd645b9ca67303d028ad2cf3a6b9a616748a"
+    version: "0.1.0-alpha.8"
+    linux_sha256: "23244b02e72a8fdf29ef6b15026b89e3586417e5ec96df138c3906d893a14136"
+    macos_sha256: "ae5ce7c263f8e98858569be76444cfcec589ae194714598d9a75a34cb3a30086"
 tool_dependencies:
   type: yaml
   when: false
