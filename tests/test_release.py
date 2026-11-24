@@ -162,6 +162,101 @@ class DraftPublication(ReleaseAdapterTest):
                 os.chdir(prior)
 
 
+class CheckedPublicationWrites(ReleaseAdapterTest):
+    def test_main_update_uses_its_response_and_rejects_a_different_ref_before_publication(self):
+        tag, preview = "v0.1.0", "v0.1.0-alpha.15"
+        correct = {"ref": "refs/heads/main", "object": {"sha": sha, "type": "commit"}}
+        previous = {"ref": "refs/heads/main", "object": {"sha": "b" * 40, "type": "commit"}}
+        wrong = {"ref": "refs/heads/unrelated", "object": {"sha": sha, "type": "commit"}}
+        for initial, applied, passes in ((previous, wrong, False), (previous, correct, True),
+                                         (correct, None, True)):
+            with self.subTest(initial=initial, applied=applied), tempfile.TemporaryDirectory() as dist:
+                writes = []
+                reads = []
+                verified_main = []
+                def api(path, **options):
+                    if path.startswith("git/ref/tags/"):
+                        return {"ref": path.removeprefix("git/ref/"), "object": {"sha": sha}}
+                    if path == "git/ref/heads/main":
+                        reads.append(path)
+                        return initial
+                    if path == "git/refs/heads/main":
+                        self.assertEqual((options["method"], json.loads(options["data"])),
+                                         ("PATCH", {"sha": sha, "force": False}))
+                        writes.append("main")
+                        return applied
+                    if options:
+                        self.assertEqual((path, json.loads(options["data"])), ("releases/12", {"draft": False}))
+                        writes.append("publish")
+                    return {"id": 12}
+
+                def owner(command, query):
+                    if query["kind"] == "state":
+                        return json.dumps({"action": "resume", "create_tag": False, "missing": []})
+                    if query["kind"] == "ref" and query["name"] == "refs/heads/main":
+                        self.assertEqual(command, "template-publication-v1")
+                        verified_main.append(query["reference"])
+                        if query["reference"] != correct:
+                            raise ValueError("owner rejected ref")
+                    return ""
+
+                env = {"MODE":"stable","TAG":tag,"PREVIEW":preview,"SOURCE_SHA":sha,"PROOF":"checked","DIST":dist}
+                with patch.dict(os.environ, env), patch.object(publish,"config_at",return_value={"kind":"copier"}), \
+                        patch.object(publish,"by_tag",return_value={"id":12}), patch.object(publish,"optional"), \
+                        patch.object(publish,"check_release"), patch.object(publish,"judge",side_effect=owner), \
+                        patch.object(publish,"request",side_effect=api):
+                    if passes:
+                        publish.main()
+                    else:
+                        with self.assertRaisesRegex(ValueError,"owner rejected ref"):
+                            publish.main()
+                self.assertEqual(reads, ["git/ref/heads/main"])
+                self.assertEqual(verified_main, [applied if applied is not None else initial])
+                self.assertEqual(writes, (["main"] if applied is not None else []) + (["publish"] if passes else []))
+
+    def test_draft_notes_are_checked_on_both_complete_responses_before_publication(self):
+        tag = "v0.1.0-alpha.15"
+        origins = {"run": 123}
+        expected = "Preview of " + sha + "\n\nBuild origins\n\n```json\n" + json.dumps(origins, indent=2) + "\n```"
+        for after in (expected, expected + " "):
+            with self.subTest(after=after), tempfile.TemporaryDirectory() as dist:
+                for platform in ("macos-aarch64", "linux-x86_64"):
+                    (Path(dist) / ("tool-" + platform)).write_bytes(b"build output")
+                current = {"id":12, "body":expected+" ", "draft":True, "assets":[], "origin":"first"}
+                final = dict(current, body=after, origin="second")
+                drafts = iter([current, final])
+                queries = []
+                writes = []
+                def api(path, **options):
+                    if path != "releases/12":
+                        return {"object":{"sha":sha}}
+                    if options:
+                        writes.append(json.loads(options["data"]))
+                        return {"id":12}
+                    return next(drafts)
+                def owner(command, query):
+                    if query["kind"] == "state":
+                        return json.dumps({"action":"resume","create_tag":False,"missing":[]})
+                    if query["kind"] == "notes":
+                        self.assertEqual(command, "template-publication-v1")
+                        queries.append(query)
+                        return json.dumps(query["release"]["body"] == query["expected"])
+                    return ""
+                env = {"MODE":"preview","TAG":tag,"SOURCE_SHA":sha,"DIST":dist}
+                with patch.dict(os.environ,env), patch.object(publish,"config_at",return_value={"kind":"binary","binary":"tool"}), \
+                        patch.object(publish,"by_tag",return_value={"id":12}),patch.object(publish,"optional"), \
+                        patch.object(publish,"binary_origins",return_value=origins),patch.object(publish,"sums",return_value={}), \
+                        patch.object(publish,"check_release"),patch.object(publish,"judge",side_effect=owner), \
+                        patch.object(publish,"request",side_effect=api):
+                    if after == expected:
+                        publish.main()
+                    else:
+                        with self.assertRaisesRegex(ValueError,"different build origins"):
+                            publish.main()
+                self.assertEqual(queries, [{"kind":"notes", "release":draft, "expected":expected} for draft in (current,final)])
+                self.assertEqual(writes,[{"body":expected}] + ([{"draft":False}] if after == expected else []))
+
+
 class BinaryOrigins(ReleaseAdapterTest):
     def setUp(self):
         super().setUp()
