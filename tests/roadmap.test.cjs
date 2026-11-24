@@ -7,16 +7,16 @@ function mockRoadmap(t) {
   const requests = []
   t.mock.method(require('node:child_process'), 'execFileSync', (program, args, options) => {
     assert.equal(program, 'chrono-host-release')
-    assert.deepEqual(args, ['roadmap-v1'])
     assert.equal(options.encoding, 'utf8')
     const expected = requests.shift()
+    assert.deepEqual(args, [expected.command])
     const input = JSON.parse(options.input)
     assert.deepEqual(input, expected.input)
     if (expected.error) throw expected.error
     return JSON.stringify(expected.output)
   })
   t.after(() => assert.deepEqual(requests, []))
-  return (input, output, error) => requests.push({input, output, error})
+  return (input, output, error, command = 'roadmap-v1') => requests.push({input, output, error, command})
 }
 
 test('new work, release publication, closing and reopening reconcile against current GitHub state', async t => {
@@ -49,9 +49,10 @@ test('new work, release publication, closing and reopening reconcile against cur
   }
   const github = {rest: {issues, repos: {listReleases: () => releases}}, paginate: async (fn, args) => [...fn(args)]}
   const defaults = {version: '1.2.0'}
-  const run = (selected, numbers, state, plan = defaults) => {
+  const run = (selected, numbers, state, plan = defaults, version) => {
     const snapshots = releases.map(({draft, published_at}) => JSON.parse(JSON.stringify({draft, published_at})))
     reply({operation: 'published', releases: snapshots}, selected)
+    if (version) reply({floor: plan.version, latest: version.latest}, version.target, undefined, 'template-next-version-v1')
     if (numbers !== null) {
       const rows = issues.listForRepo().map(({number, state, pull_request, milestone}) =>
         JSON.parse(JSON.stringify({number, state, pull_request, milestone})))
@@ -93,10 +94,10 @@ test('new work, release publication, closing and reopening reconcile against cur
   assert.equal(target.state, 'open')
   items.push({number: 5, state: 'open'})
   const rolling = {kind: 'copier', version: '1.2.0', version_policy: 'next_patch'}
-  await run([0, 2], [5], {final:true, open:1, result:'open'}, rolling)
+  await run([0, 2], [5], {final:true, open:1, result:'open'}, rolling, {latest:'1.2.0', target:'1.2.1'})
   assert.equal(items.at(-1).milestone, milestones.find(m => m.title === 'v1.2.1').number)
   items.push({number: 6, state: 'open'})
-  await run([0, 2], [6], {final:true, open:1, result:'open'}, {...rolling, version: '2.0.0'})
+  await run([0, 2], [6], {final:true, open:1, result:'open'}, {...rolling, version: '2.0.0'}, {latest:'1.2.0', target:'2.0.0'})
   assert.equal(items.at(-1).milestone, milestones.find(m => m.title === 'v2.0.0').number)
   await assert.rejects(run([0, 2], null, null, {...rolling, kind: 'binary'}), /Copier/)
   await assert.rejects(sync(github, {}, {version: 'not-a-version'}), /Expected version/)
