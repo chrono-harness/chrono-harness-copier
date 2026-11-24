@@ -54,18 +54,9 @@ def sha_of(repository, ref):
 
 
 def pin_manifest(repository, binary, version, tool):
-    pin = tool["version"]
-    require(re.fullmatch(re.escape(version) + r"-alpha\.[1-9][0-9]*", pin), "expected the planned preview")
-    require(tool["bin"] == binary, "wrong installed executable")
-    result = {}
-    for key, suffix in [("linux-x64", "linux-x86_64"), ("macos-arm64", "macos-aarch64")]:
-        asset = f"{binary}-{suffix}"
-        platform = tool["platforms"][key]
-        require(platform["url"] == f"https://github.com/{repository}/releases/download/v{pin}/{asset}",
-                "consumer installs a different release asset")
-        require(re.fullmatch("sha256:[a-f0-9]{64}", platform["checksum"]), "invalid checksum")
-        result[asset] = platform["checksum"]
-    return "v" + pin, result
+    tag, checksums = json.loads(judge("template-consumer-pin-v1", {
+        "kind": "binary", "repository": repository, "binary": binary, "version": version, "tool": tool}))
+    return tag, checksums
 
 
 def public_preview(repository, tag, checksums):
@@ -90,15 +81,10 @@ def consumer_pin(config, repository, sha):
     if config["kind"] == "copier":
         import yaml
         answers = yaml.safe_load(raw)
-        require(answers["_src_path"] in ("gh:" + repository, "https://github.com/" + repository,
-                "https://github.com/" + repository + ".git"), "consumer uses another template")
-        tag = answers["_commit"]
-        if config.get("version_policy") == "next_patch":
-            pattern = "v" + CORE + r"(?:-alpha[.][1-9][0-9]*)?"
-        else:
-            pattern = "v" + re.escape(config["version"]) + r"-alpha[.][1-9][0-9]*"
-        require(re.fullmatch(pattern, tag), "consumer has not adopted this preview series")
-        return tag, None
+        tag, checksums = json.loads(judge("template-consumer-pin-v1", {
+            "kind": "copier", "repository": repository, "version": config["version"],
+            "rolling": config.get("version_policy") == "next_patch", "answers": answers}))
+        return tag, checksums
     import tomllib
     binary = config["binary"]
     tool = tomllib.loads(raw)["tools"]["http:" + binary]

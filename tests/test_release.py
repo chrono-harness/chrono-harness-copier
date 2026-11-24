@@ -188,11 +188,19 @@ class ReleasePlan(ReleaseAdapterTest):
         tools = {"bin":"chrono-pr", "version":"0.1.0-alpha.15", "platforms":{
             "linux-x64":{"url":prefix+"linux-x86_64","checksum":digest},
             "macos-arm64":{"url":prefix+"macos-aarch64","checksum":digest}}}
-        tag, checks = plan.pin_manifest(repository, "chrono-pr", version, tools)
+        tag = "v0.1.0-alpha.15"
+        checks = {f"chrono-pr-{suffix}":digest for suffix in ("linux-x86_64","macos-aarch64")}
+        self.owner.return_value = subprocess.CompletedProcess([], 0, json.dumps([tag, checks]), "")
+        self.assertEqual(plan.pin_manifest(repository, "chrono-pr", version, tools), (tag, checks))
+        args, options = self.owner.call_args
+        self.assertEqual(args, (["chrono-host-release", "template-consumer-pin-v1"],))
+        self.assertEqual(json.loads(options["input"]), {"kind":"binary", "repository":repository,
+                         "binary":"chrono-pr", "version":version, "tool":tools})
         self.assertEqual(tag, "v0.1.0-alpha.15")
         for platform in tools["platforms"]:
             wrong = copy.deepcopy(tools)
             wrong["platforms"][platform]["url"] += "other"
+            self.reject("wrong platform")
             with self.assertRaises(ValueError):
                 plan.pin_manifest(repository, "chrono-pr", version, wrong)
         release = {"tag_name":tag,"draft":False,"prerelease":True,
@@ -276,6 +284,20 @@ class CopierPromotion(ReleaseAdapterTest):
         self.answers = "_src_path: gh:" + self.source + "\n_commit: " + self.preview
         self.release = {"tag_name": self.preview, "prerelease": True, "draft": False, "assets": []}
         self.outcome = "success"
+        self.expected_version = version
+        def select(args, **options):
+            if args[-1] == "template-consumer-pin-v1":
+                request = json.loads(options["input"])
+                self.assertEqual(request["kind"], "copier")
+                self.assertEqual(request["repository"], self.source)
+                self.assertEqual(request["version"], self.expected_version)
+                self.assertEqual(request["rolling"], self.config.get("version_policy") == "next_patch")
+                answers = request["answers"]
+                if answers["_src_path"] == "gh:other/repo":
+                    return subprocess.CompletedProcess(args, 2, "", "consumer uses another template")
+                return subprocess.CompletedProcess(args, 0, json.dumps([answers["_commit"], None]), "")
+            return self.owner.return_value
+        self.owner.side_effect = select
 
     def promote(self):
         with patch.object(plan, "api", side_effect=self.response):
@@ -318,15 +340,17 @@ class NextSourceCycle(CopierPromotion):
 
     def setUp(self):
         super().setUp()
+        previous = self.owner.side_effect
         def release_command(args, **options):
             if args[-1] != "template-next-version-v1":
-                return subprocess.CompletedProcess(args, 0, "", "")
+                return previous(args, **options)
             observed = json.loads(options["input"])
             self.assertEqual(observed["latest"], "0.1.0")
             responses = {"0.1.0": "0.1.1", "2.0.0": "2.0.0"}
             return subprocess.CompletedProcess(args, 0, json.dumps(responses[observed["floor"]]), "")
         self.owner.side_effect = release_command
         self.preview = "v0.1.1-alpha.15"
+        self.expected_version = "0.1.1"
         self.answers = "_src_path: gh:" + self.source + "\n_commit: " + self.preview
         self.release["tag_name"] = self.preview
         self.previous = "c" * 40
