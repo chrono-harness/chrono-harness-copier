@@ -1,4 +1,4 @@
-{%- set selection = namespace(tools=[]) -%}
+{%- set selection = namespace(tools=['chrono-harness'] if local_check_retention else []) -%}
 {%- for feature in features -%}
   {%- set selection.tools = selection.tools + tool_dependencies[feature] -%}
 {%- endfor -%}
@@ -192,10 +192,23 @@ description = "Run the registered business check"
 run = {{ check_command | to_json }}
 {% endif %}
 
-{% if features or generate_check %}
+{% if local_check_retention %}
+[tasks.harness-maintain-checks]
+description = "Maintain registered local check originals"
+run = "chrono-harness retention --host-root . --request .chrono-harness/maintain-checks.json"
+{% endif %}
+{% if features or generate_check or local_check_retention %}
 [tasks.harness-setup]
 description = "Install this repository's selected tools"
+{% if local_check_retention %}
+run = [
+    "mise install",
 {% if 'instructions' in features %}
+    "mise exec -- chrono-instructions sync-rules --host-root .",
+{% endif %}
+    "sh .chrono-harness/setup-check-retention.sh",
+]
+{% elif 'instructions' in features %}
 run = ["mise install", "mise exec -- chrono-instructions sync-rules --host-root ."]
 {% else %}
 run = "mise install"
