@@ -3,7 +3,15 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 node --test tests/roadmap.test.cjs
 PYTHONDONTWRITEBYTECODE=1 uv run --no-project --python ">=3.11" --with PyYAML==6.0.3 python tests/test_release.py
-stage=$(mktemp -d)
+stage_parent=${TMPDIR:-/tmp}
+if [[ ${GITHUB_ACTIONS:-} == true && -n ${RUNNER_TEMP:-} ]]; then
+  stage_parent=$RUNNER_TEMP
+elif git_dir=$(git rev-parse --absolute-git-dir 2>/dev/null) && [[ -f "$git_dir/commondir" && ! -L copier-renders ]]; then
+  stage_parent=$PWD/copier-renders
+  mkdir -p -- "$stage_parent"
+fi
+stage_parent=$(cd -- "$stage_parent" && pwd -P)
+stage=$(mktemp -d "$stage_parent/copier-check.XXXXXXXX")
 trap 'rm -rf -- "$stage"' EXIT
 uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD -d repository=chrono-harness/chrono-harness-copier "$PWD" "$stage/default"
 uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD -d 'features=[]' -d github_templates=false -d manage_roadmap=false . "$stage/empty"
