@@ -25,6 +25,10 @@ assert retention_config["tasks"]["harness-maintain-checks"]["run"] == (
     f"chrono-harness retention --host-root . --request {request}"
 )
 assert json.loads((retention_host / request).read_bytes()) == {"operation": "maintain"}
+assert json.loads((full.parent / "expiring-checks" / request).read_bytes()) == {
+    "operation": "maintain",
+    "expire_local_check_slots": [".chrono-harness/state/collection/check.json", ".chrono-harness/state/other/a b.json"],
+}
 assert not (retention_host / policy).exists()
 assert retention_config["tasks"]["harness-setup"]["run"] == [
     "mise install", "sh .chrono-harness/setup-check-retention.sh"
