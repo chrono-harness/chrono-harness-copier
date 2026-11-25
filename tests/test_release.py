@@ -42,6 +42,11 @@ class ReleaseAdapterTest(unittest.TestCase):
             else:
                 answer = request["event"]["workflow_run"]["head_branch"]
             return subprocess.CompletedProcess(args, 0, json.dumps(answer), "")
+        if args[-1] == "template-promotion-v1" and request.get("kind") == "version-policy":
+            config = request["config"]
+            if config.get("version_policy") == "next_patch" and config["kind"] == "binary":
+                return subprocess.CompletedProcess(args, 2, "", "next_patch requires a Copier source product")
+            return subprocess.CompletedProcess(args, 0, json.dumps(config.get("version_policy") == "next_patch"), "")
         if args[-1] == "template-promotion-v1" and request.get("kind") == "tag":
             return subprocess.CompletedProcess(args, 0, json.dumps(bool(request["refs"])), "")
         return self.owner.return_value
@@ -374,7 +379,8 @@ class ReleasePlan(ReleaseAdapterTest):
     def test_preview_rejects_wrong_events(self, github):
         selected = plan.plan(config, repository, event, "workflow_run")
         self.assertEqual(selected, {"mode":"preview", "sha":sha, "tag":"v0.1.0-alpha.15"})
-        routed, checked, contained, matching = self.owner.call_args_list
+        routed, strategy, checked, contained, matching = self.owner.call_args_list
+        self.assertEqual(json.loads(strategy.kwargs["input"]), {"kind": "version-policy", "config": config})
         self.assertEqual(json.loads(routed.kwargs["input"])["event"]["workflow_run"]["head_branch"], "dev")
         self.assertEqual(json.loads(matching.kwargs["input"]), {"kind":"tag","tag":"v0.1.0","refs":[]})
         self.assertEqual(checked.args[0], ["chrono-host-release", "template-run-v1"])
@@ -387,6 +393,7 @@ class ReleasePlan(ReleaseAdapterTest):
         with self.assertRaisesRegex(ValueError, "wrong run"):
             plan.plan(config, repository, event, "workflow_run")
         self.owner.side_effect = [subprocess.CompletedProcess([], 0, '"dev"', ""),
+                                  subprocess.CompletedProcess([], 0, "false", ""),
                                   subprocess.CompletedProcess([], 0, "", ""),
                                   subprocess.CompletedProcess([], 2, "", "branch does not contain commit")]
         github.side_effect = lambda path: {"status":"diverged"}
@@ -545,7 +552,7 @@ class CopierPromotion(ReleaseAdapterTest):
         self.outcome = "success"
         self.expected_version = version
         def select(args, **options):
-            if json.loads(options["input"]).get("kind") in ("event", "tag"):
+            if json.loads(options["input"]).get("kind") in ("event", "tag", "version-policy"):
                 return self.route_responses(args, **options)
             if args[-1] == "template-promotion-v1":
                 request = json.loads(options["input"])
@@ -667,7 +674,7 @@ class NextSourceCycle(CopierPromotion):
     def test_stable_semver_increments_and_host_can_plan_a_major(self):
         self.assertEqual(self.promote()["tag"], "v0.1.1")
         with patch.object(plan, "api", side_effect=self.response):
-            target, _ = plan.next_target(dict(self.config, version="2.0.0"), self.source)
+            target, _, _ = plan.next_target(dict(self.config, version="2.0.0"), self.source)
         self.assertEqual(target["version"], "2.0.0")
 
     def test_all_release_pages_reach_the_selector(self):
