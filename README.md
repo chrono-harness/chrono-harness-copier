@@ -74,7 +74,7 @@ test -n "$old_tree" && test "$old_tree" = "$new_tree"
 uvx --from copier==9.19.1 copier update --defaults --vcs-ref "$tag" --answers-file .chrono-harness/template-answers.yml
 ```
 
-核对生成的 diff 和本仓的业务检查。临时的 `$audit` 在比较完毕后可以删除。本仓开发者从 `dev` 开分支，修改 `scaffold/` 或 `copier.yml`，在仓库根运行 `./tests/check.sh` 验证默认选装、宿主定制和发布配方。
+核对生成的 diff 和本仓的业务检查。临时的 `$audit` 在比较完毕后可以删除。本仓开发者从 `dev` 开分支，修改 `scaffold/` 或 `copier.yml`，在仓库根运行 `mise exec -- ./tests/check.sh` 验证默认选装、宿主定制和发布配方。
 
 ## Issue 与版本路线图
 
@@ -98,7 +98,7 @@ Copier 源码产品可选 `version_policy: next_patch`。新提交在最高已�
 
 模板选项在 `copier.yml`，写入宿主的文件在 `scaffold/`。修改模板后，从仓库根目录运行 `./tests/check.sh`。
 
-本仓自检将渲染副本交给比较和更新检查，退出时立即清理本次副本。在 Git 关联工作树中，副本位于工作树的 `copier-renders/`。托管工作树的宿主把该业务目录登记为可回收，独立维护任务回收到期工作树时一起清除中断遗留的副本。GitHub Actions 使用作业的 `RUNNER_TEMP`。长期主检出、源码归档及已有 `copier-renders` 符号链接的工作树使用 `TMPDIR`（缺省 `/tmp`）；强制终止后的保留期限由临时目录的维护者决定。
+本仓自检将渲染副本交给比较和更新检查。在 Git 关联工作树中，副本位于工作树的 `copier-renders/`。托管工作树的宿主把该业务目录登记为可回收，独立维护任务回收到期工作树时一起清除中断遗留的副本。GitHub Actions 使用作业的 `RUNNER_TEMP`。源码归档及重定向的渲染目录使用 `TMPDIR`（缺省 `/tmp`），由临时目录持有者维护。
 
 
 ### 严格宿主的 CI 安装及标签发布
@@ -108,3 +108,9 @@ Copier 源码产品可选 `version_policy: next_patch`。新提交在最高已�
 本宿主把安装入口、发布 workflow 及生成的绑定根登记为 program，关联同一次受影响的整 crate Verus 操作与专属 Cargo 行为检查。Cargo 测试目标直接使用同一文件，本配置的测试项目使用 dev-dependencies `toml = "0.9"`（parse、serde、std）、`serde_yaml = "0.9"`、`tree-sitter = "0.25"` 和 `tree-sitter-bash = "0.25"`，分别读取实际工作流、安装脚本和发布命令。Verus 检查管理器选择、顺序和前置作业条件；实际 POSIX 和 GitHub 行为需要下游运行验收。源绑定固定当前 manager 表、平台摘要、选装工具、发布程序与 tag 参数。模板支持的两个固定上游版本为 host-bootstrap v0.1.0-alpha.15 的 `ci-install-table-v1 manager` 和 host-release v0.1.0-alpha.21 的 `check-pushed-tag`。
 
 选装严格检查且生成 mise 清单时，同一验证根读取宿主真实 TOML。请将该清单登记为 program，指向该根。setup 验收检查本仓工具选择、安装与刷新指令的顺序。工具发行标签与摘要由宿主安装流程验证。
+
+普通长期主检出使用本仓已选装的 host-bootstrap 在 `target/native-checks/` 内建立一次检查的私有目录。成功后立即释放，失败或强制中断的材料留给调试与转存。开发者可在窗口内复制到独立存储。在本机用户 crontab 登记以下任务，每小时回收超过 24 小时且使用方已退出的检查目录。把两处绝对路径替换为本机检出和 mise 安装位置。
+
+```cron
+0 * * * * cd '/absolute/path/to/chrono-harness-copier' && '/absolute/path/to/mise' run harness-maintain-checks
+```
