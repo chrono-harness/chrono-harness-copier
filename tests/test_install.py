@@ -102,6 +102,21 @@ def exercise(host, state, *, pinned):
         tools = tomllib.loads(receipt.read_text()).get("tools", {}) if receipt.exists() else {}
         return {key: value["version"] for key, value in tools.items()}
 
+    # A directory is a destination operand to mv. Reject it before staging or publishing.
+    receipt.mkdir()
+    neighbor = receipt / "source"
+    neighbor.write_bytes(b"preserve this file")
+    calls = run(1, CHRONO_TOOL_CHANNEL="preview")
+    assert neighbor.read_bytes() == b"preserve this file" and list(receipt.iterdir()) == [neighbor]
+    assert not any(call[0] == "curl" for call in calls)
+    neighbor.unlink()
+    receipt.rmdir()
+    receipt.symlink_to(state / "uncreated")
+    calls = run(1, CHRONO_TOOL_CHANNEL="stable")
+    assert receipt.is_symlink() and not (state / "uncreated").exists()
+    assert not any(call[0] == "curl" for call in calls)
+    receipt.unlink()
+
     if pinned:
         base = host / ".config/mise/conf.d/chrono-harness.toml"
         selection = base.read_text()
