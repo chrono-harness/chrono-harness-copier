@@ -42,7 +42,7 @@ enabled() {
     case "$disabled" in *\"http:$1\"*) return 1 ;; *) return 0 ;; esac
 }
 legacy=$config_dir/zz-chrono-harness-resolved.toml
-projection=$config_dir/zz-chrono-harness-selection.toml
+projection=$config_dir/selected-chrono-harness.toml
 state=$PWD/.chrono-harness/state
 selection=$state/tool-selection
 resolved=$selection/versions.toml
