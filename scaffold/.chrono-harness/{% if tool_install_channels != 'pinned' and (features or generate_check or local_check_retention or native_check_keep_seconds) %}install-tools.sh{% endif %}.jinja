@@ -89,10 +89,16 @@ else
                     auth="Authorization: Bearer $GITHUB_TOKEN"
                     set -- "$@" -H @-
                 fi
-                curl "$@" -D "$pages/headers" -o "$pages/$page.json" \
+                if curl "$@" -D "$pages/headers" -o "$pages/$page.json" \
                     "https://api.github.com/repos/$repository/releases?per_page=100&page=$page" <<AUTH
 $auth
 AUTH
+                then :
+                else
+                    fetch_status=$?
+                    echo "Failed to read releases for $repository (page $page)." >&2
+                    exit "$fetch_status"
+                fi
                 # Fetch the next numbered page only when GitHub advertises it.
                 if grep -i '^link:' "$pages/headers" | grep -Fq 'rel="next"'; then page=$((page + 1))
                 else break; fi
