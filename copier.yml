@@ -3,6 +3,10 @@ _subdirectory: scaffold
 _preserve_symlinks: true
 _skip_if_exists: [.chrono-harness/rules.json]
 _answers_file: .chrono-harness/template-answers.yml
+published_instruction_feeds:
+  type: yaml
+  when: false
+  default: !include .chrono-harness/published-rules.json
 host_release_artifact:
   type: yaml
   when: false

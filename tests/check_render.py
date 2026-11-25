@@ -69,6 +69,13 @@ assert json.loads((selected / ".chrono-harness/pr.json").read_text())["base"] ==
 assert (selected / ".github/workflows/harness-check.yml").is_file()
 assert config["tasks"]["harness-check"]["run"] == "python3 check.py"
 
+def rule_block(text):
+    _, begin, remaining = text.partition("<!-- chrono-instructions:begin -->")
+    block, end, _ = remaining.partition("<!-- chrono-instructions:end -->")
+    assert begin and end
+    return block
+
+
 for host in (empty, selected, full):
     assert (host / "AGENTS.md").readlink() == Path("CLAUDE.md")
     assert (host / "CLAUDE.md").is_file()
@@ -78,7 +85,9 @@ for host in (empty, selected, full):
     if host == full:
         assert json.loads((host / ".chrono-harness/rules.json").read_text()) == {"mode": "all"}
         assert "## job.wait" in guide and "## artifact.cleanup" in guide
-        assert "mise run harness-setup" in guide
+        assert rule_block(guide) == rule_block(Path("CLAUDE.md").read_text())
+        assert not (host / ".chrono-harness/published-rules.json").exists()
+        assert "published_instruction_feeds" not in (host / ".chrono-harness/template-answers.yml").read_text()
         assert (host / "docs/licenses/trureturing-Apache-2.0.txt").is_file()
     else:
         assert not (host / ".chrono-harness/rules.json").exists()
@@ -86,7 +95,10 @@ for host in (empty, selected, full):
         assert not (host / "docs/licenses/trureturing-Apache-2.0.txt").exists()
     assert not (host / ".chrono-harness/instructions").exists()
     usage = (host / ".chrono-harness/USAGE.md").read_text()
+    assert (".chrono-harness/USAGE.md" in guide)
     assert ("刷新根指南" in usage) == (host == full)
+    if host == selected:
+        assert "mise exec -- chrono-pr pr-reminders" in usage
 
 expected = ['http:chrono-cache', 'http:chrono-ci', 'http:chrono-diagnostics', 'http:chrono-distribution', 'http:chrono-harness', 'http:chrono-host-bootstrap', 'http:chrono-host-release', 'http:chrono-inputs', 'http:chrono-instructions', 'http:chrono-judge-ci', 'http:chrono-judge-cost', 'http:chrono-judge-filemap', 'http:chrono-judge-mixed', 'http:chrono-judge-projects', 'http:chrono-judge-registration', 'http:chrono-judge-routes', 'http:chrono-judge-workflow', 'http:chrono-pr', 'http:chrono-test-git', 'http:chrono-test-git-profile', 'http:chrono-worktree', 'http:verus']
 default_config = tomllib.loads((full / manifest).read_text())
