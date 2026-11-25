@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 import unittest
 from unittest.mock import patch
+from urllib.parse import parse_qs
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / ".github" / "release"))
 import plan
@@ -362,6 +363,32 @@ class BinaryOrigins(ReleaseAdapterTest):
 
 
 class ReleasePlan(ReleaseAdapterTest):
+    def test_selects_first_success_from_the_filtered_fixed_workflow(self):
+        path = f"repos/{repository}/actions/workflows/check.yml/runs"
+        failed = dict(run, status="completed", conclusion="failure")
+        pending = dict(run, status="in_progress", conclusion=None)
+        newer = dict(run, id=45, run_attempt=2)
+        older = dict(run, id=23, run_attempt=1)
+        # The matching success can be outside the first unfiltered page.
+        history = [pending] + [failed] * 99 + [newer, older]
+
+        def list_runs(request):
+            endpoint, _, query = request.partition("?")
+            self.assertEqual(endpoint, path)
+            options = parse_qs(query)
+            self.assertEqual(options["event"], ["push"])
+            self.assertEqual(options["branch"], ["dev"])
+            self.assertEqual(options["head_sha"], [sha])
+            eligible = [row for row in history if options.get("status") == [row["conclusion"]]]
+            if "status" not in options:
+                eligible = history
+            return {"workflow_runs": eligible[:int(options["per_page"][0])]}
+
+        with patch.object(plan, "api", side_effect=list_runs) as request:
+            self.assertEqual(plan.successful_run(repository, "dev", "check.yml", sha), newer)
+        options = parse_qs(request.call_args.args[0].partition("?")[2])
+        self.assertEqual((options["status"], options["per_page"]), (["success"], ["1"]))
+
     def test_late_check_uses_the_version_from_its_checked_source(self):
         later = "b" * 40
         configs = {sha: dict(config, version="0.1.3"), later: dict(config, version="0.1.4")}

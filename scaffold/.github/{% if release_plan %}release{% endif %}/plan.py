@@ -37,11 +37,12 @@ def check_run(run, repository, branch, workflow, sha):
 
 
 def successful_run(repository, branch, workflow, sha):
-    query = urlencode({"event": "push", "branch": branch, "head_sha": sha, "per_page": 100})
+    query = urlencode({"event": "push", "branch": branch, "head_sha": sha,
+                       "status": "success", "per_page": 1})
     path = f"repos/{repository}/actions/workflows/{workflow}/runs?{query}"
-    for run in api(path)["workflow_runs"]:
-        if run["status"] == "completed" and run["conclusion"] == "success":
-            return run
+    runs = api(path)["workflow_runs"]
+    if runs:
+        return runs[0]
     raise ValueError(f"no successful {workflow} push for {repository}@{sha}")
 
 
