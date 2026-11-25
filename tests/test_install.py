@@ -89,7 +89,7 @@ def exercise(host, state, *, pinned):
     env = dict(PATH=str(state) + os.pathsep + os.defpath, INSTALL_FIXTURE=str(state), SEED_DIGEST=seed,
                PREVIEW="1.0.0-alpha.1")
     receipt = host / ".config/mise/conf.d/zz-chrono-harness-resolved.toml"
-    assert receipt.is_symlink() and not receipt.exists()
+    assert not receipt.is_symlink() and not receipt.exists()
 
     def run(status=0, **options):
         (state / "calls").write_text("")

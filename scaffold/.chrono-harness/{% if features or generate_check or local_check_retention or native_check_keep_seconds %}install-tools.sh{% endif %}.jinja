@@ -114,8 +114,8 @@ for command in {{ commands | join(' ') }}; do
     verify "$executable" "${expected#sha256:}"
 done
 if [ -s "$manifest" ]; then
-    mv -f "$manifest" "$config_dir/.chrono-harness-installed"
+    mv -f "$manifest" "$resolved"
 else
-    rm -f "$config_dir/.chrono-harness-installed"
+    rm -f "$resolved"
 fi
 {% endif -%}
