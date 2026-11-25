@@ -1,3 +1,4 @@
 {
-  "operation": "maintain"
+  "operation": "maintain"{% if expire_local_check_slots %},
+  "expire_local_check_slots": {{ expire_local_check_slots | tojson }}{% endif %}
 }

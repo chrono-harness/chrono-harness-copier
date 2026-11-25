@@ -69,6 +69,29 @@ local_check_retention:
   type: bool
   default: false
   help: 本地检查会向 runner 登记原件，并需要使用 runner 维护它们吗？已有专属维护入口的宿主可以继续沿用。
+expire_local_check_slots:
+  when: "{{ local_check_retention }}"
+  type: json
+  default: []
+  help: 选择可在窗口到期后释放的成功本地完整检查报告，填宿主登记的固定报告相对路径数组。默认空。
+  validator: |
+    {%- set slots = expire_local_check_slots -%}
+    {%- if slots is string or slots is mapping or slots is not sequence -%}
+    报告路径必须是数组
+    {%- elif slots | select('string') | list | length != slots | length -%}
+    每项报告路径都必须是字符串
+    {%- elif slots | unique(case_sensitive=true) | list | length != slots | length -%}
+    报告路径必须唯一
+    {%- else -%}
+    {%- for slot in slots -%}
+    {%- set parts = slot.split('/') -%}
+    {%- if not slot.startswith('.chrono-harness/state/')
+        or slot | regex_search('[\\\\\\x00-\\x1f*?\\[\\]]')
+        or '' in parts or '.' in parts or '..' in parts -%}
+    必须填写 .chrono-harness/state/ 下面的固定文件路径
+    {%- endif -%}
+    {%- endfor -%}
+    {%- endif -%}
 generate_check:
   type: bool
   default: false

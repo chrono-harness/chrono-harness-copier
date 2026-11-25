@@ -20,6 +20,18 @@ uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
   -d 'project_guide=业务源码位于 src/。' -d generate_check=true -d 'check_command=python3 check.py' . "$stage/selected"
 uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
   -d 'features=[]' -d local_check_retention=true "$PWD" "$stage/local-check-retention"
+uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
+  -d 'features=[]' -d local_check_retention=true \
+  -d 'expire_local_check_slots=[".chrono-harness/state/collection/check.json",".chrono-harness/state/other/a b.json"]' \
+  "$PWD" "$stage/expiring-checks"
+if uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
+    -d 'features=[]' -d local_check_retention=true \
+    -d 'expire_local_check_slots=[".chrono-harness/state/../ci/report.json"]' \
+    "$PWD" "$stage/invalid-checks" >"$stage/invalid-checks.log" 2>&1; then
+  echo 'accepted a report path outside the state directory' >&2
+  exit 1
+fi
+grep -Fq '必须填写 .chrono-harness/state/' "$stage/invalid-checks.log"
 (
   cp -R "$stage/local-check-retention" "$stage/retention-update"
   cd "$stage/retention-update"
