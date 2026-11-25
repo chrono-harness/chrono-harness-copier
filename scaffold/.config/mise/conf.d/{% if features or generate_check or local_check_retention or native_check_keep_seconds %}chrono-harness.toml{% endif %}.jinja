@@ -2,6 +2,10 @@
 {%- set selected_tools = tools.selected_tools -%}
 {% if tool_install_channels == 'pinned' %}
 {{ tools.pins() }}
+{% else %}
+# Install tasks resolve fresh release metadata before mise can install an old receipt.
+[settings.task]
+run_auto_install = false
 {% endif %}
 {% if 'rust' in selected_tools %}
 [tools.rust]

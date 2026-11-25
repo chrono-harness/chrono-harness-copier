@@ -96,6 +96,12 @@ uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
   -d 'features=["judge-ci","verus"]' . "$stage/judge-ci-verus"
 uv run --no-project --python ">=3.11" python tests/check_render.py "$stage/empty" "$stage/selected" "$stage/default" "$stage/diagnostics" "$stage/host-bootstrap" "$stage/host-release" "$stage/inputs" "$stage/judge-routes" "$stage/judge-cost" "$stage/worktree" "$stage/judge-filemap" "$stage/judge-mixed" "$stage/judge-projects" "$stage/judge-ci" "$stage/judge-workflow" "$stage/test-git"
 
+# Install and update a rendered tool pair entirely through mocked command boundaries.
+uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
+  -d 'features=["test-git"]' -d tool_install_channels=all \
+  -d 'integration_tool_tags={"integration/verify":{"chrono-test-git":"v1.2.3"}}' . "$stage/install-channels"
+uv run --no-project --python ">=3.11" python tests/test_install.py "$stage/install-channels"
+
 # Exercise a real host that edits its guide and later changes its tool choices.
 (
   cd "$stage/default"
