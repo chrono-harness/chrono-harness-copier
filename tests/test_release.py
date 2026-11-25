@@ -32,6 +32,19 @@ class ReleaseAdapterTest(unittest.TestCase):
         super().setUp()
         self.owner = self.enterContext(patch.object(plan.subprocess, "run"))
         self.owner.return_value = subprocess.CompletedProcess([], 0, "", "")
+        self.owner.side_effect = self.route_responses
+
+    def route_responses(self, args, **options):
+        request = json.loads(options["input"])
+        if args[-1] == "template-promotion-v1" and request.get("kind") == "event":
+            if request["event_name"] == "workflow_dispatch":
+                answer = "dispatch"
+            else:
+                answer = request["event"]["workflow_run"]["head_branch"]
+            return subprocess.CompletedProcess(args, 0, json.dumps(answer), "")
+        if args[-1] == "template-promotion-v1" and request.get("kind") == "tag":
+            return subprocess.CompletedProcess(args, 0, json.dumps(bool(request["refs"])), "")
+        return self.owner.return_value
 
     def reject(self, message):
         self.owner.return_value = subprocess.CompletedProcess([], 2, "", message)
@@ -193,6 +206,9 @@ class CheckedPublicationWrites(ReleaseAdapterTest):
                 def owner(command, query):
                     if query["kind"] == "state":
                         return json.dumps({"action": "resume", "create_tag": False, "missing": []})
+                    if query["kind"] == "main":
+                        self.assertEqual(query, {"kind":"main","source":sha,"reference":initial})
+                        return json.dumps(initial == previous)
                     if query["kind"] == "ref" and query["name"] == "refs/heads/main":
                         self.assertEqual(command, "template-publication-v1")
                         verified_main.append(query["reference"])
@@ -237,10 +253,13 @@ class CheckedPublicationWrites(ReleaseAdapterTest):
                 def owner(command, query):
                     if query["kind"] == "state":
                         return json.dumps({"action":"resume","create_tag":False,"missing":[]})
-                    if query["kind"] == "notes":
+                    if query["kind"] == "draft":
                         self.assertEqual(command, "template-publication-v1")
                         queries.append(query)
-                        return json.dumps(query["release"]["body"] == query["expected"])
+                        changed = query["release"]["body"] != query["expected"]
+                        if changed and query["verify"]:
+                            raise ValueError("different build origins on draft")
+                        return json.dumps(changed)
                     return ""
                 env = {"MODE":"preview","TAG":tag,"SOURCE_SHA":sha,"DIST":dist}
                 with patch.dict(os.environ,env), patch.object(publish,"config_at",return_value={"kind":"binary","binary":"tool"}), \
@@ -253,7 +272,7 @@ class CheckedPublicationWrites(ReleaseAdapterTest):
                     else:
                         with self.assertRaisesRegex(ValueError,"different build origins"):
                             publish.main()
-                self.assertEqual(queries, [{"kind":"notes", "release":draft, "expected":expected} for draft in (current,final)])
+                self.assertEqual(queries, [{"kind":"draft","origins":True,"verify":verify,"release":draft,"expected":expected} for verify,draft in ((False,current),(True,final))])
                 self.assertEqual(writes,[{"body":expected}] + ([{"draft":False}] if after == expected else []))
 
 
@@ -355,7 +374,9 @@ class ReleasePlan(ReleaseAdapterTest):
     def test_preview_rejects_wrong_events(self, github):
         selected = plan.plan(config, repository, event, "workflow_run")
         self.assertEqual(selected, {"mode":"preview", "sha":sha, "tag":"v0.1.0-alpha.15"})
-        checked, contained = self.owner.call_args_list
+        routed, checked, contained, matching = self.owner.call_args_list
+        self.assertEqual(json.loads(routed.kwargs["input"])["event"]["workflow_run"]["head_branch"], "dev")
+        self.assertEqual(json.loads(matching.kwargs["input"]), {"kind":"tag","tag":"v0.1.0","refs":[]})
         self.assertEqual(checked.args[0], ["chrono-host-release", "template-run-v1"])
         self.assertEqual(json.loads(checked.kwargs["input"]),
                          {"repository": repository, "branch": "dev", "workflow": "check.yml", "sha": sha, "run": run})
@@ -365,11 +386,31 @@ class ReleasePlan(ReleaseAdapterTest):
         self.reject("wrong run")
         with self.assertRaisesRegex(ValueError, "wrong run"):
             plan.plan(config, repository, event, "workflow_run")
-        self.owner.side_effect = [subprocess.CompletedProcess([], 0, "", ""),
+        self.owner.side_effect = [subprocess.CompletedProcess([], 0, '"dev"', ""),
+                                  subprocess.CompletedProcess([], 0, "", ""),
                                   subprocess.CompletedProcess([], 2, "", "branch does not contain commit")]
         github.side_effect = lambda path: {"status":"diverged"}
         with self.assertRaisesRegex(ValueError, "does not contain"):
             plan.plan(config, repository, event, "workflow_run")
+
+    def test_rejected_event_stops_before_reading_release_config(self):
+        cases = [
+            ("workflow_run", {"repository":{"full_name":"other/repo"}, "workflow_run":{"head_branch":"dev"}}, "wrong event repository"),
+            ("workflow_run", {"repository":{"full_name":repository}, "workflow_run":{"head_branch":"topic"}}, "unsupported release branch"),
+            ("workflow_dispatch", {"repository":{"full_name":repository}, "ref":"refs/heads/main"}, "dispatch from dev"),
+        ]
+        for name, invalid, message in cases:
+            with self.subTest(name=name,message=message), patch.object(plan, "api") as fetch:
+                self.owner.side_effect = None
+                self.reject(message)
+                with self.assertRaisesRegex(ValueError, message):
+                    plan.event_plan(repository, invalid, name, sha)
+                fetch.assert_not_called()
+                args, options = self.owner.call_args
+                self.assertEqual(args[0], ["chrono-host-release","template-promotion-v1"])
+                request = json.loads(options["input"])
+                self.assertEqual((request["kind"], request["repository"], request["event_name"]), ("event",repository,name))
+                self.assertEqual(request["event"]["repository"],invalid["repository"])
 
     def test_real_draft_api_shape_uses_the_release_id(self):
         import os
@@ -452,11 +493,11 @@ class ReleasePlan(ReleaseAdapterTest):
         consumer = {"branch":"dev","workflow":"pr-adoption.yml","repository":"example/org","pin":"lock.toml"}
         main = dict(event, workflow_run=dict(run, head_branch="main"))
         def refuse_different_main(args, **options):
-            if args[-1] == "template-promotion-v1":
+            if args[-1] == "template-promotion-v1" and json.loads(options["input"])["kind"] == "adopted":
                 request = json.loads(options["input"])
                 self.assertEqual((request["checked_main"], request["selected"]), (sha, "b"*40))
                 return subprocess.CompletedProcess(args, 2, "", "main differs")
-            return self.owner.return_value
+            return self.route_responses(args, **options)
         self.owner.side_effect = refuse_different_main
         with patch.object(plan,"compare",return_value={"status":"ahead"}), patch.object(plan,"sha_of",return_value="b"*40), patch.object(plan,"successful_run",return_value=run), \
                 patch.object(plan,"check_acceptance"), patch.object(plan,"consumer_pin",return_value=("v0.1.0-alpha.15", {})):
@@ -504,6 +545,8 @@ class CopierPromotion(ReleaseAdapterTest):
         self.outcome = "success"
         self.expected_version = version
         def select(args, **options):
+            if json.loads(options["input"]).get("kind") in ("event", "tag"):
+                return self.route_responses(args, **options)
             if args[-1] == "template-promotion-v1":
                 request = json.loads(options["input"])
                 if request["kind"] == "adopted":
