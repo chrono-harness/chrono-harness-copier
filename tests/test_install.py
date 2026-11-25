@@ -61,11 +61,12 @@ def external(name, args):
             print(os.environ.get("DISABLED", "[]"))
         elif args[:3] == ["config", "get", "--file"]:
             config = tomllib.loads(Path(args[3]).read_text())
-            tool = re.fullmatch(r'tools\."(http:[a-z-]+)"\.platforms\.linux-x64\.checksum', args[4])[1]
-            print(config["tools"][tool]["platforms"]["linux-x64"]["checksum"])
+            tool, field = re.fullmatch(r'tools\."(http:[a-z-]+)"\.(version|platforms\.linux-x64\.checksum)', args[4]).groups()
+            selected = config["tools"][tool]
+            print(selected["version"] if field == "version" else selected["platforms"]["linux-x64"]["checksum"])
         else:
             assert args[0] == "-C"
-            if args[2:] == ["install"]:
+            if args[2] == "install":
                 if os.environ.get("FAULT") == "install":
                     return 9
             else:
@@ -127,6 +128,9 @@ def exercise(host, state, *, pinned):
         base.write_text(selection)
         calls = run()
         assert not receipt.exists() and not any(c[0] == "curl" for c in calls)
+        exact = ["mise", "-C"]
+        requested = ["%s@%s" % (tool, cfg["version"]) for tool, cfg in tomllib.loads(selection)["tools"].items()]
+        assert [a[4:] for a in calls if a[:2] == exact and a[3] == "install"] == [requested, []]
         run(CHRONO_TOOL_CHANNEL="stable")
         assert set(versions().values()) == {"1.0.0"}
         before = receipt.read_bytes()
@@ -142,6 +146,9 @@ def exercise(host, state, *, pinned):
     primary = "http:chrono-test-git"
     profile = "http:chrono-test-git-profile"
     assert versions() == {primary: "1.2.3", profile: "1.0.0-alpha.1"}
+    assert [a[4:] for a in first if a[0] == "mise" and a[3:4] == ["install"]] == [
+        [primary + "@1.2.3", profile + "@1.0.0-alpha.1"], []
+    ]
     # The repository pin survives new releases. Explicit installation choices override it.
     run(PREVIEW="1.0.0-alpha.2")
     assert versions() == {primary: "1.2.3", profile: "1.0.0-alpha.2"}

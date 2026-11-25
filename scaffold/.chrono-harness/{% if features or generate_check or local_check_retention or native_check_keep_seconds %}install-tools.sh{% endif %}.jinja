@@ -107,8 +107,18 @@ done <<'TOOLS'
 {{ command }} {{ tools.catalog[command][0] }}
 {% endfor -%}
 TOOLS
-# The nested config takes precedence over any previous checkout receipt.
-# mise installs explicit versions and verifies fresh downloads. Also hash cache hits.
+# An explicit mise argument installs the requested release even when a matching prerelease is cached.
+set --
+for command in {{ commands | join(' ') }}; do
+    enabled "$command" || continue
+    select_tool "$command"
+    source=$manifest
+    if [ "$selector" = pinned ]; then source=$config_dir/chrono-harness.toml; fi
+    version=$(mise config get --file "$source" "tools.\"http:$command\".version")
+    set -- "$@" "http:$command@$version"
+done
+if [ "$#" -gt 0 ]; then mise -C "$work" install "$@"; fi
+# Install remaining host tools, including Rust and Verus where selected.
 mise -C "$work" install
 for command in {{ commands | join(' ') }}; do
     enabled "$command" || continue
