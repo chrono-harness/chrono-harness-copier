@@ -12,7 +12,7 @@ else
   stage_parent=${TMPDIR:-/tmp}
   if [[ ${GITHUB_ACTIONS:-} == true && -n ${RUNNER_TEMP:-} ]]; then
     stage_parent=$RUNNER_TEMP
-  elif git_dir=$(git rev-parse --absolute-git-dir 2>/dev/null) && [[ -f "$git_dir/commondir" && ! -L copier-renders ]]; then
+  elif [[ -f .git ]] && git_dir=$(git rev-parse --absolute-git-dir 2>/dev/null) && [[ -f "$git_dir/commondir" && ! -L copier-renders ]]; then
     stage_parent=$PWD/copier-renders
     mkdir -p -- "$stage_parent"
   fi
