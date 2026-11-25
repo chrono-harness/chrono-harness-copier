@@ -96,6 +96,8 @@ Copier 源码产品可选 `version_policy: next_patch`。新提交在最高已�
 
 模板选项在 `copier.yml`，写入宿主的文件在 `scaffold/`。修改模板后，从仓库根目录运行 `./tests/check.sh`。
 
+本仓自检将渲染副本交给比较和更新检查，退出时立即清理本次副本。在 Git 关联工作树中，副本位于工作树的 `copier-renders/`。托管工作树的宿主把该业务目录登记为可回收，独立维护任务回收到期工作树时一起清除中断遗留的副本。GitHub Actions 使用作业的 `RUNNER_TEMP`。长期主检出、源码归档及已有 `copier-renders` 符号链接的工作树使用 `TMPDIR`（缺省 `/tmp`）；强制终止后的保留期限由临时目录的维护者决定。
+
 
 ### 严格宿主的 CI 安装及标签发布
 
