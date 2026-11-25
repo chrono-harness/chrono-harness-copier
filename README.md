@@ -41,9 +41,9 @@ CI 使用 `sh .chrono-harness/install-tools.sh` 进行同样的安装。固定�
 
 查阅[上游规则及稳定 ID](https://raw.githubusercontent.com/chrono-harness/chrono-harness-instructions/published-rules/rules.json)。本地说明可写在 `CLAUDE.md` 末尾的“本仓追加指令”一节。重新选择工具时，Copier 会保留这些说明。启用继承需要网络和 curl；读取失败时命令报告失败。关闭继承可以离线工作。
 
-本地 scoped 检查会登记供单元报告和汇总读取的原件。采用 runner 维护的宿主可选 `local_check_retention: true`，使用 `mise run harness-setup` 安装 runner 并初始化缺失的 24 小时策略，维护入口为 `mise run harness-maintain-checks`。将初始化的策略提交到宿主仓库。已有 `.chrono-harness/retention.json` 的宿主保留自己的窗口和生产者。使用 worktree 或其他专属维护入口的宿主继续使用原入口。生成的 `.chrono-harness/USAGE.md` 说明按小时调度、报告引用和窗口内转存。只下载工具或只输出 stdout 的检查可以关闭这个选项。
+本地 scoped 检查会登记供单元报告和汇总读取的原件。采用 runner 维护的宿主可选 `local_check_retention: true`，使用 `mise run harness-setup` 安装 runner 并初始化缺失的 24 小时策略，维护入口为 `mise run harness-maintain-checks`。将初始化的策略提交到宿主仓库。已有 `.chrono-harness/retention.json` 的宿主保留自己的窗口和生产者。使用 worktree 或其他专属维护入口的宿主继续使用原入口。生成的 `.chrono-harness/USAGE.md` 说明一次维护的入口、报告引用、窗口内转存和实际回收时机。只下载工具或只输出 stdout 的检查可以关闭这个选项。
 
-若本仓的原生检查使用 `chrono-host-bootstrap native-scratch run`，在模板答案里设置 `native_check_keep_seconds: 86400`，将该编译目录的时限设为一天。模板会安装负责目录的工具，纳入同一个 `mise run harness-maintain-checks` 定时任务。只需原生目录维护的宿主也可单独启用。默认值 0 表示关闭。
+若本仓的原生检查使用 `chrono-host-bootstrap native-scratch run`，在模板答案里设置 `native_check_keep_seconds: 86400`，将该编译目录的时限设为一天。模板会安装负责目录的工具，通过同一个 `mise run harness-maintain-checks` 入口回收已到期且租约已释放的目录。只需原生目录维护的宿主也可单独启用。默认值 0 表示关闭。
 
 要在保留窗口结束后释放最后一次成功的本地完整检查报告，在 `expire_local_check_slots` 数组中填写本仓检查登记中的固定报告路径，例如 `[".chrono-harness/state/collection/check.json"]`。默认数组为空。每条路径只填一次。CI 上传、发布交接和失败诊断所需的报告由相应消费者管理。
 
@@ -123,8 +123,4 @@ Copier 首次渲染从模板内的 `.chrono-harness/published-rules.json` 读取
 
 选装严格检查且生成 mise 清单时，同一验证根读取宿主真实 TOML。请将该清单登记为 program，指向该根。setup 验收检查本仓工具选择、安装与刷新指令的顺序。工具发行标签与摘要由宿主安装流程验证。
 
-普通长期主检出使用本仓已选装的 host-bootstrap 在 `target/native-checks/` 内建立一次检查的私有目录。成功后立即释放，失败或强制中断的材料留给调试与转存。开发者可在窗口内复制到独立存储。在本机用户 crontab 登记以下任务，每小时回收超过 24 小时且使用方已退出的检查目录。把两处绝对路径替换为本机检出和 mise 安装位置。
-
-```cron
-0 * * * * cd '/absolute/path/to/chrono-harness-copier' && '/absolute/path/to/mise' run harness-maintain-checks
-```
+普通长期主检出使用本仓已选装的 host-bootstrap 在 `target/native-checks/` 内建立一次检查的私有目录。成功后立即释放，失败或强制中断的材料留给调试与转存。开发者可在窗口内复制到独立存储。本仓的 `mise run harness-maintain-checks` 执行一轮回收，处理超过 24 小时且使用方已退出的检查目录。只有实际执行这一轮后才能核对删除结果。
