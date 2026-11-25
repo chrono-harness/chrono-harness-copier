@@ -48,14 +48,18 @@ def external(name, args):
             assert target.name.startswith((".chrono-install.", "chrono-install."))
             shutil.rmtree(target)
         else:
-            assert args[0] == "-f" and target == Path.cwd() / ".config/mise/conf.d/zz-chrono-harness-resolved.toml"
+            selection = Path.cwd() / ".chrono-harness/state/tool-selection"
+            legacy = Path.cwd() / ".config/mise/conf.d/zz-chrono-harness-resolved.toml"
+            assert args[0] == "-f"
+            if name == "mv":
+                assert len(args) == 3 and target == selection and Path(args[1]).name == "versions.toml"
+            else:
+                assert len(args) == 2 and target in (selection / "versions.toml", legacy)
             if os.environ.get("FAULT") == name:
                 return 17
             if name == "mv":
-                assert len(args) == 3
-                Path(args[1]).replace(target)
+                Path(args[1]).replace(selection / "versions.toml")
             else:
-                assert len(args) == 2
                 target.unlink(missing_ok=True)
     elif name == "sha256sum":
         data = sys.stdin.buffer.read()
@@ -138,7 +142,7 @@ def exercise(host, state, *, pinned):
         result = subprocess.run(["/bin/sh", str(installer)], cwd=host, env={**env, **options},
                                 capture_output=True, text=True)
         assert result.returncode == status, (result.returncode, result.stderr)
-        assert not list(receipt.parent.glob(".chrono-install.*"))
+        assert not list((host / ".config/mise/conf.d").glob(".chrono-install.*"))
         return [json.loads(line) for line in (state / "calls").read_text().splitlines()]
 
     def versions():
@@ -192,10 +196,13 @@ def exercise(host, state, *, pinned):
         assert base.read_text() == selection
         return
 
+    legacy = host / ".config/mise/conf.d/zz-chrono-harness-resolved.toml"
+    legacy.write_bytes(b"# previous installation\n")
     for fault, status in (("no-headers", 2), ("truncated", 2), ("mv", 17)):
         run(status, FAULT=fault)
-        assert not receipt.exists()
+        assert not receipt.exists() and legacy.read_bytes() == b"# previous installation\n"
     first = run(LAST_PAGE="10")
+    assert not legacy.exists()
     assert len([c for c in first if c[0] == "curl" and "-D" in c]) == 10
     primary = "http:chrono-test-git"
     profile = "http:chrono-test-git-profile"
