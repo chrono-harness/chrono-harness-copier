@@ -33,6 +33,8 @@ mise run harness-setup
 
 查阅[上游规则及稳定 ID](https://raw.githubusercontent.com/chrono-harness/chrono-harness-instructions/published-rules/rules.json)。本地说明可写在 `CLAUDE.md` 末尾的“本仓追加指令”一节。重新选择工具时，Copier 会保留这些说明。启用继承需要网络和 curl；读取失败时命令报告失败。关闭继承可以离线工作。
 
+本地 scoped 检查会登记供单元报告和汇总读取的原件。采用 runner 维护的宿主可选 `local_check_retention: true`，使用 `mise run harness-setup` 安装 runner 并初始化缺失的 24 小时策略，维护入口为 `mise run harness-maintain-checks`。将初始化的策略提交到宿主仓库。已有 `.chrono-harness/retention.json` 的宿主保留自己的窗口和生产者。使用 worktree 或其他专属维护入口的宿主继续使用原入口。生成的 `.chrono-harness/USAGE.md` 说明按小时调度、报告引用和窗口内转存。只下载工具或只输出 stdout 的检查可以关闭这个选项。
+
 选择生成业务检查时，填写项目现有的检查命令和运行平台。本地与 GitHub Actions 都会执行 `mise run harness-check`。已有登记式检查的项目可以沿用自己的工作流。
 
 先提交工作树里的本地改动。要调整本仓安装的工具，运行下面的命令重新选择，然后运行 `mise run harness-setup`。取消选项后，本仓的安装清单会移除对应工具。共享缓存仍可能供其他仓库使用。

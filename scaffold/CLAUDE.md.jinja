@@ -9,7 +9,7 @@
 
 {% endif %}
 日常开发和 PR 使用 `{{ dev_branch }}`，正式版本从 `main` 发布。
-{% if features or generate_check %}
+{% if features or generate_check or local_check_retention %}
 首次检出时，在仓库根目录安装本仓选定的工具。
 
 ```sh
@@ -21,6 +21,9 @@ mise run harness-setup
 本仓选装的工具为 {% for feature in features %}`{{ feature }}`{% if not loop.last %}、{% endif %}{% endfor %}。
 {% endif %}
 本仓安装选择保存在 `.chrono-harness/template-answers.yml`，版本和平台校验值保存在 `.config/mise/conf.d/chrono-harness.toml`。
+{% endif %}
+{% if local_check_retention %}
+本地检查原件的保留窗口和定时维护入口见 [.chrono-harness/USAGE.md](.chrono-harness/USAGE.md)。需要保留的报告和原件应在窗口内转存。
 {% endif %}
 {% if generate_check %}
 修改后执行 `mise run harness-check`。本仓登记的实际命令为 `{{ check_command }}`。GitHub Actions 在 `{{ check_os }}` 运行同一入口。

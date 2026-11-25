@@ -14,6 +14,21 @@ for path in [Path(".github/PULL_REQUEST_TEMPLATE.md"), *Path(".github/ISSUE_TEMP
     assert (full / path).read_bytes() == path.read_bytes()
     assert not (empty / path).exists()
 
+retention_host = full.parent / "local-check-retention"
+policy = Path(".chrono-harness/retention.json")
+request = Path(".chrono-harness/maintain-checks.json")
+for host in (empty, full, selected):
+    assert not (host / policy).exists() and not (host / request).exists()
+retention_config = tomllib.loads((retention_host / manifest).read_text())
+assert set(retention_config["tools"]) == {"http:chrono-harness"}
+assert retention_config["tasks"]["harness-maintain-checks"]["run"] == (
+    f"chrono-harness retention --host-root . --request {request}"
+)
+assert json.loads((retention_host / request).read_bytes()) == {"operation": "maintain"}
+assert not (retention_host / policy).exists()
+assert retention_config["tasks"]["harness-setup"]["run"] == [
+    "mise install", "sh .chrono-harness/setup-check-retention.sh"
+]
 assert not (empty / manifest).exists()
 config = tomllib.loads((selected / manifest).read_text())
 assert set(config["tools"]) == {"http:chrono-pr"}

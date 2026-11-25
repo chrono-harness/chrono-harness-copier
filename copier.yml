@@ -65,6 +65,10 @@ strict_host_adapters:
     {%- endfor -%}
     {%- endif -%}
     {%- endif -%}
+local_check_retention:
+  type: bool
+  default: false
+  help: 本地检查会向 runner 登记原件，并需要使用 runner 维护它们吗？已有专属维护入口的宿主可以继续沿用。
 generate_check:
   type: bool
   default: false

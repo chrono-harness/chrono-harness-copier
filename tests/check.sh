@@ -10,6 +10,24 @@ uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD -d 'features=[]'
 uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
   -d 'features=["pr"]' -d repository=chrono-harness/chrono-harness-copier \
   -d 'project_guide=业务源码位于 src/。' -d generate_check=true -d 'check_command=python3 check.py' . "$stage/selected"
+uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
+  -d 'features=[]' -d local_check_retention=true "$PWD" "$stage/local-check-retention"
+(
+  cp -R "$stage/local-check-retention" "$stage/retention-update"
+  cd "$stage/retention-update"
+  sh .chrono-harness/setup-check-retention.sh
+  python3 -c 'import json; p=json.load(open(".chrono-harness/retention.json")); assert p["max_lifetime_seconds"] == 86400 and p["producers"]["check-original"] == [".chrono-harness/state/"]'
+  echo '{"custom":"host-owned"}' >.chrono-harness/retention.json
+  sh .chrono-harness/setup-check-retention.sh
+  git init -qb dev
+  git add .
+  git -c user.name=Copier -c user.email=copier@example.invalid commit -qm "Host with its own policy"
+  uvx --from copier==9.19.1 copier update --defaults --vcs-ref HEAD \
+    --answers-file .chrono-harness/template-answers.yml -d local_check_retention=false
+  grep -Fxq '{"custom":"host-owned"}' .chrono-harness/retention.json
+  test ! -e .chrono-harness/maintain-checks.json
+  test ! -e .chrono-harness/setup-check-retention.sh
+)
 # Render the self-hosted publisher and both choices of the host release contract.
 source_plan=$(cat .chrono-harness/release.json)
 binary_plan=$(python3 -c 'import json,sys; p=json.load(sys.stdin); p.update(kind="binary",version_policy="explicit",binary="demo",build="tools/build.sh"); print(json.dumps(p))' < .chrono-harness/release.json)
