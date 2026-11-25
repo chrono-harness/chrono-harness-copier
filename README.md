@@ -99,4 +99,6 @@ Copier 源码产品可选 `version_policy: next_patch`。新提交在最高已�
 
 采用 shell 的 mise 安装入口、`source → build → publish` 标签工作流且启用严格 FILEMAP 的 Rust 工具仓，可以设置 `strict_host_adapters`。填写发布二进制名 `binary`、工作流实际安装的有序命令清单 `ci_tools` 和测试项目已有的 Verus 宏导出 crate 名 `verus_macro_crate`。模板生成 `.chrono-harness/ci/host_adapters.rs`。默认空配置不生成该文件。
 
-本宿主把安装入口、发布 workflow 及生成的绑定根登记为 program，关联同一次受影响的整 crate Verus 操作与专属 Cargo 行为检查。Cargo 测试目标直接使用同一文件，本配置的测试项目使用 dev-dependencies `serde_yaml = "0.9"`、`tree-sitter = "0.25"` 和 `tree-sitter-bash = "0.25"`，分别读取实际工作流、安装脚本和发布命令。Verus 检查管理器选择、顺序和前置作业条件；实际 POSIX 和 GitHub 行为需要下游运行验收。源绑定固定当前 manager 表、平台摘要、选装工具、发布程序与 tag 参数。模板支持的两个固定上游版本为 host-bootstrap v0.1.0-alpha.15 的 `ci-install-table-v1 manager` 和 host-release v0.1.0-alpha.21 的 `check-pushed-tag`。
+本宿主把安装入口、发布 workflow 及生成的绑定根登记为 program，关联同一次受影响的整 crate Verus 操作与专属 Cargo 行为检查。Cargo 测试目标直接使用同一文件，本配置的测试项目使用 dev-dependencies `toml = "0.9"`（parse、serde、std）、`serde_yaml = "0.9"`、`tree-sitter = "0.25"` 和 `tree-sitter-bash = "0.25"`，分别读取实际工作流、安装脚本和发布命令。Verus 检查管理器选择、顺序和前置作业条件；实际 POSIX 和 GitHub 行为需要下游运行验收。源绑定固定当前 manager 表、平台摘要、选装工具、发布程序与 tag 参数。模板支持的两个固定上游版本为 host-bootstrap v0.1.0-alpha.15 的 `ci-install-table-v1 manager` 和 host-release v0.1.0-alpha.21 的 `check-pushed-tag`。
+
+选装严格检查且生成 mise 清单时，同一验证根读取宿主真实 TOML。请将该清单登记为 program，指向该根。setup 验收检查本仓工具选择、安装与刷新指令的顺序。工具发行标签与摘要由宿主安装流程验证。

@@ -31,6 +31,12 @@ uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
 grep -Fq 'use chrono_example::verus;' "$stage/strict/.chrono-harness/ci/host_adapters.rs"
 grep -Fq 'set -- chrono-harness verus' "$stage/strict/.chrono-harness/ci/host_adapters.rs"
 grep -Fq '$RUNNER_TEMP/example-mise.XXXXXXXX' "$stage/strict/.chrono-harness/ci/host_adapters.rs"
+grep -Fq 'let selected = true;' "$stage/strict/.chrono-harness/ci/host_adapters.rs"
+uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
+  -d 'features=["cache"]' \
+  -d 'strict_host_adapters={"binary":"chrono-example","verus_macro_crate":"chrono_example","ci_tools":["verus"]}' \
+  . "$stage/strict-without-instructions"
+grep -Fq 'let selected = false;' "$stage/strict-without-instructions/.chrono-harness/ci/host_adapters.rs"
 cmp .github/roadmap.cjs "$stage/copier/.github/roadmap.cjs"
 cmp .github/workflows/issue-roadmap.yml "$stage/copier/.github/workflows/issue-roadmap.yml"
 cmp .github/workflows/release.yml "$stage/copier/.github/workflows/release.yml"
