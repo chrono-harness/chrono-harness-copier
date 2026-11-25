@@ -4,7 +4,7 @@
 
 本仓维护供独立仓库选装工具的 Copier 模板。
 
-开发分支为 `dev`，正式分支为 `main`。
+开发分支为 `dev`，正式分支为 `main`。已选组件见 [Copier 答案](template-answers.yml)。
 
 [组织协作规范](https://github.com/chrono-harness/chrono-harness-instructions/blob/dev/docs/contributing.md)
 
