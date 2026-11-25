@@ -51,7 +51,7 @@ test('new work, release publication, closing and reopening reconcile against cur
   }
   const github = {rest: {issues, repos: {listReleases: () => releases}}, paginate: async (fn, args) => [...fn(args)]}
   const defaults = {version: '1.2.0'}
-  const run = (selected, numbers, state, plan = defaults, version) => {
+  const run = (selected, numbers, state, plan = defaults, version, destination) => {
     if (version) {
       const tags = releases.map(({tag_name, draft, prerelease, published_at}) =>
         JSON.parse(JSON.stringify({tag_name, draft, prerelease, published_at})))
@@ -60,17 +60,18 @@ test('new work, release publication, closing and reopening reconcile against cur
     }
     if (numbers !== null) {
       const target = version?.target ?? plan?.version
-      const titles = new Set(milestones.map(m => m.title))
-      if (target) titles.add('v' + target)
+      const titles = milestones.map(m => m.title)
       const tags = releases.map(({tag_name, draft, prerelease, published_at}) =>
         JSON.parse(JSON.stringify({tag_name, draft, prerelease, published_at})))
-      const expected = Object.fromEntries([...titles].map(title => [title, {
+      const returnedTitles = new Set(titles)
+      if (target) returnedTitles.add('v' + target)
+      const expected = Object.fromEntries([...returnedTitles].map(title => [title, {
         final: title === 'v1.2.0' && selected.includes(2) ? 2 : null,
         preview: title === 'v1.2.0' && selected.includes(0) ? 0 : null,
       }]))
-      reply({operation: 'release-selection', releases: tags, milestones: [...titles]}, {
+      reply({operation: 'release-selection', releases: tags, target: target ? 'v' + target : null, milestones: titles}, {
         tag: selected.length ? releases[selected[selected.length - 1]].tag_name : null,
-        milestones: expected,
+        milestones: expected, destination,
       })
     }
     if (numbers !== null) {
@@ -88,12 +89,12 @@ test('new work, release publication, closing and reopening reconcile against cur
     }
     return sync(github, {repo: {owner: 'a', repo: 'b'}, payload: {}}, plan)
   }
-  await run([], [1], null, null)
+  await run([], [1], null, null, undefined, 'Backlog')
   assert.equal(milestones[0].title, 'Backlog')
   assert.equal(items[0].milestone, 1)
   assert.equal(items[1].milestone, undefined)
   items.push({number: 3, state: 'open'})
-  await run([], [3])
+  await run([], [3], null, defaults, undefined, 'v1.2.0')
   const target = milestones.find(m => m.title === 'v1.2.0')
   target.description = '保留宿主计划。'
   assert.equal(items[2].milestone, target.number)
@@ -106,7 +107,7 @@ test('new work, release publication, closing and reopening reconcile against cur
   assert.doesNotMatch(target.description, /正式版/)
   releases.push({tag_name: 'v1.2.0', draft: false, published_at: '2025-02-01', prerelease: false, html_url: 'https://example.org/stable'})
   items.push({number: 4, state: 'open'})
-  await run([0, 2], [4], {final:true, open:1, result:'open'})
+  await run([0, 2], [4], {final:true, open:1, result:'open'}, defaults, undefined, 'Backlog')
   assert.equal(items[3].milestone, 1)
   assert.equal(target.state, 'open')
   assert.equal(target.description, '原样交还的正式版正文')
@@ -121,10 +122,14 @@ test('new work, release publication, closing and reopening reconcile against cur
   assert.equal(target.state, 'open')
   items.push({number: 5, state: 'open'})
   const rolling = {kind: 'copier', version: '1.2.0', version_policy: 'next_patch'}
-  await run([0, 2], [5], {final:true, open:1, result:'open'}, rolling, {latest:'1.2.0', target:'1.2.1'})
+  await run([0, 2], [5], {final:true, open:1, result:'open'}, rolling, {latest:'1.2.0', target:'1.2.1'}, 'v1.2.1')
   assert.equal(items.at(-1).milestone, milestones.find(m => m.title === 'v1.2.1').number)
   items.push({number: 6, state: 'open'})
-  await run([0, 2], [6], {final:true, open:1, result:'open'}, {...rolling, version: '2.0.0'}, {latest:'1.2.0', target:'2.0.0'})
+  await run([0, 2], [6], {final:true, open:1, result:'open'}, {...rolling, version: '2.0.0'}, {latest:'1.2.0', target:'2.0.0'}, 'v2.0.0')
+  assert.equal(items.at(-1).milestone, milestones.find(m => m.title === 'v2.0.0').number)
+  // GitHub writes must use the command's complete title.
+  items.push({number: 7, state: 'open'})
+  await run([0, 2], [7], {final:true, open:1, result:'open'}, defaults, undefined, 'v2.0.0')
   assert.equal(items.at(-1).milestone, milestones.find(m => m.title === 'v2.0.0').number)
   target.description = '<!-- chrono-harness release -->未完的原文'
   writes.length = 0
@@ -186,7 +191,7 @@ test('selection output fits when the repository has many unreleased milestones',
   const reply = mockRoadmap(t)
   const milestones = Array.from({length: 100}, (_, i) => ({title: 'v1.0.' + i}))
   const titles = milestones.map(m => m.title)
-  reply({operation: 'release-selection', releases: [], milestones: titles}, {
+  reply({operation: 'release-selection', releases: [], target: null, milestones: titles}, {
     tag: null, milestones: Object.fromEntries(titles.map(title => [title, {final: null, preview: null}])),
   })
   reply({operation: 'unassigned', issues: []}, [])
@@ -197,7 +202,7 @@ test('selection output fits when the repository has many unreleased milestones',
 
 test('a failed decision aborts before any GitHub write', async t => {
   const reply = mockRoadmap(t)
-  reply({operation: 'release-selection', releases: [], milestones: []}, null, new Error('tool exited 2'))
+  reply({operation: 'release-selection', releases: [], target: null, milestones: []}, null, new Error('tool exited 2'))
   const github = {rest:{issues:{listMilestones: () => []}, repos:{listReleases: () => []}}, paginate: fn => fn()}
   await assert.rejects(sync(github, {repo:{}, payload:{}}, null), /tool exited 2/)
 })
