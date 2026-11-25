@@ -183,7 +183,7 @@ tool_install_channels:
 tool_versions:
   type: json
   default: {}
-  help: 为个别已选组织工具指定精确发行标签，例如 {"chrono-pr":"v0.1.12-alpha.109"}。
+  help: 按命令选择 stable、preview 或精确的 v 标签，例如 {"chrono-pr":"stable","chrono-diagnostics":"v0.1.0"}。
   validator: |
     {%- if tool_versions is not mapping -%}需要工具命令名到精确标签的对象
     {%- else -%}
@@ -191,5 +191,5 @@ tool_versions:
     {%- if native_check_keep_seconds -%}{%- set selected.commands = selected.commands + ['chrono-host-bootstrap'] -%}{%- endif -%}
     {%- for f in features -%}{%- set selected.commands = selected.commands + tool_dependencies[f] -%}{%- endfor -%}
     {%- for command, tag in tool_versions.items() -%}
-    {%- if command not in selected.commands or not command.startswith('chrono-') or tag is not string or not (tag | regex_search('^v[0-9]+[.][0-9]+[.][0-9]+(-[A-Za-z0-9-]+([.][A-Za-z0-9-]+)*)?\\Z')) -%}需要已选组织工具名和精确 v 版本标签
+    {%- if command not in selected.commands or not command.startswith('chrono-') or tag is not string or (tag not in ('stable', 'preview') and not (tag | regex_search('^v[0-9]+[.][0-9]+[.][0-9]+(-[A-Za-z0-9-]+([.][A-Za-z0-9-]+)*)?\\Z'))) -%}需要已选组织工具名和 stable、preview 或精确 v 版本标签
     {%- endif -%}{%- endfor -%}{%- endif -%}
