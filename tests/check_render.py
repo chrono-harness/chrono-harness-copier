@@ -78,7 +78,8 @@ for host in (empty, selected, full):
     if host == full:
         assert json.loads((host / ".chrono-harness/rules.json").read_text()) == {"mode": "all"}
         assert "## job.wait" in guide and "## artifact.cleanup" in guide
-        assert "mise run harness-setup" in guide
+        expected_block = Path("CLAUDE.md").read_text().split("<!-- chrono-instructions:begin -->", 1)[1].split("<!-- chrono-instructions:end -->", 1)[0]
+        assert "<!-- chrono-instructions:begin -->" + expected_block + "<!-- chrono-instructions:end -->" in guide
         assert (host / "docs/licenses/trureturing-Apache-2.0.txt").is_file()
     else:
         assert not (host / ".chrono-harness/rules.json").exists()
@@ -86,7 +87,10 @@ for host in (empty, selected, full):
         assert not (host / "docs/licenses/trureturing-Apache-2.0.txt").exists()
     assert not (host / ".chrono-harness/instructions").exists()
     usage = (host / ".chrono-harness/USAGE.md").read_text()
+    assert (".chrono-harness/USAGE.md" in guide)
     assert ("刷新根指南" in usage) == (host == full)
+    if host == selected:
+        assert "mise exec -- chrono-pr pr-reminders" in usage
 
 expected = ['http:chrono-cache', 'http:chrono-ci', 'http:chrono-diagnostics', 'http:chrono-distribution', 'http:chrono-harness', 'http:chrono-host-bootstrap', 'http:chrono-host-release', 'http:chrono-inputs', 'http:chrono-instructions', 'http:chrono-judge-ci', 'http:chrono-judge-cost', 'http:chrono-judge-filemap', 'http:chrono-judge-mixed', 'http:chrono-judge-projects', 'http:chrono-judge-registration', 'http:chrono-judge-routes', 'http:chrono-judge-workflow', 'http:chrono-pr', 'http:chrono-test-git', 'http:chrono-test-git-profile', 'http:chrono-worktree', 'http:verus']
 default_config = tomllib.loads((full / manifest).read_text())
