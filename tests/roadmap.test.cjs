@@ -206,3 +206,45 @@ test('a failed decision aborts before any GitHub write', async t => {
   const github = {rest:{issues:{listMilestones: () => []}, repos:{listReleases: () => []}}, paginate: fn => fn()}
   await assert.rejects(sync(github, {repo:{}, payload:{}}, null), /tool exited 2/)
 })
+
+test('a stale release notification uses the latest attempt and preserves GitHub write failures', async t => {
+  const reply = mockRoadmap(t)
+  const repo = {owner: 'a', repo: 'b'}
+  const event = {id: 123, status: 'completed', conclusion: 'failure', run_attempt: 1}
+  const run = {...event, conclusion: 'success', run_attempt: 2, html_url: 'https://example.org/runs/123'}
+  const item = {number: 17, state: 'open', user: {login: 'github-actions[bot]'},
+    body: '<!-- chrono-harness release-run 123 -->\nOriginal attempt'}
+  const context = {repo, payload: {workflow_run: event}}
+  const error = new Error('GitHub rejected the update')
+  const updates = []
+  const issues = {
+    listForRepo: () => {},
+    update: async fields => {
+      updates.push(fields)
+      throw error
+    },
+  }
+  const github = {
+    rest: {issues, actions: {getWorkflowRun: async params => {
+      assert.deepEqual(params, {...repo, run_id: 123})
+      return {data: run}
+    }}},
+    paginate: async (method, params) => {
+      assert.equal(method, issues.listForRepo)
+      assert.deepEqual(params, {...repo, labels: 'release-failure', state: 'all', per_page: 100})
+      return [item]
+    },
+  }
+  const result = {status: run.status, conclusion: run.conclusion}
+  function decide(action) {
+    reply({operation: 'release-run', ...result}, true)
+    reply({operation: 'release-issue', ...result, run_id: 123, issues: [item]}, {action, issue: 17})
+    return sync.releaseIssue(github, context)
+  }
+  await assert.rejects(decide('unknown'), /Unknown roadmap issue action: unknown/)
+  assert.deepEqual(updates, [])
+  await assert.rejects(decide('close'), e => e === error)
+  assert.deepEqual(updates, [{...repo, issue_number: 17, state: 'closed',
+    body: item.body + '\n\n同次运行已恢复。[成功的第 2 次尝试](https://example.org/runs/123/attempts/2)'}])
+  assert.equal(item.state, 'open')
+})
