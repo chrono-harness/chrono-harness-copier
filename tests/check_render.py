@@ -1,5 +1,8 @@
 """Verify the default installation and explicit tool choices."""
 import json
+import os
+import subprocess
+import tempfile
 from pathlib import Path
 import sys
 import tomllib
@@ -29,6 +32,32 @@ assert json.loads((full.parent / "expiring-checks" / request).read_bytes()) == {
     "operation": "maintain",
     "expire_local_check_slots": [".chrono-harness/state/collection/check.json", ".chrono-harness/state/other/a b.json"],
 }
+# The combined timer preserves report stdout and attempts both independent jobs.
+combined = tomllib.loads((full.parent / "expiring-checks" / manifest).read_text())
+assert set(combined["tools"]) == {"http:chrono-host-bootstrap", "http:chrono-harness"}
+with tempfile.TemporaryDirectory() as mock_directory:
+    tools = Path(mock_directory)
+    for name, expected, status in (
+        ("chrono-host-bootstrap", "native-scratch maintain 45", "NATIVE_STATUS"),
+        ("chrono-harness", f"retention --host-root . --request {request}", "REPORT_STATUS"),
+    ):
+        program = tools / name
+        program.write_text(
+            "#!/bin/sh\n"
+            + f'test "$*" = "{expected}" || exit 98\n'
+            + f'echo "{name}"\nexit "${status}"\n'
+        )
+        program.chmod(0o700)
+    for native_status, report_status, expected in ((0, 0, 0), (7, 0, 7), (0, 9, 9), (7, 9, 9)):
+        result = subprocess.run(
+            ["/bin/sh", "-ec", combined["tasks"]["harness-maintain-checks"]["run"]],
+            env={**os.environ, "PATH": mock_directory, "NATIVE_STATUS": str(native_status),
+                 "REPORT_STATUS": str(report_status)},
+            capture_output=True, text=True,
+        )
+        assert (result.returncode, result.stdout, result.stderr) == (
+            expected, "chrono-harness\n", "chrono-host-bootstrap\n"
+        )
 assert not (retention_host / policy).exists()
 assert retention_config["tasks"]["harness-setup"]["run"] == [
     "mise install", "sh .chrono-harness/setup-check-retention.sh"

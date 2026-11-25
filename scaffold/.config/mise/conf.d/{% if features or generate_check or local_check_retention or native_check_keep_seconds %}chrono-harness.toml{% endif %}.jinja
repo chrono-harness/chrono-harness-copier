@@ -1,4 +1,7 @@
 {%- set selection = namespace(tools=['chrono-harness'] if local_check_retention else []) -%}
+{%- if native_check_keep_seconds -%}
+  {%- set selection.tools = selection.tools + ['chrono-host-bootstrap'] -%}
+{%- endif -%}
 {%- for feature in features -%}
   {%- set selection.tools = selection.tools + tool_dependencies[feature] -%}
 {%- endfor -%}
@@ -192,12 +195,25 @@ description = "Run the registered business check"
 run = {{ check_command | to_json }}
 {% endif %}
 
-{% if local_check_retention %}
+{% if local_check_retention or native_check_keep_seconds %}
 [tasks.harness-maintain-checks]
+{% if native_check_keep_seconds and local_check_retention %}
+description = "Maintain native check directories and registered reports"
+run = """
+native_status=0
+chrono-host-bootstrap native-scratch maintain {{ native_check_keep_seconds }} >&2 || native_status=$?
+chrono-harness retention --host-root . --request .chrono-harness/maintain-checks.json || exit $?
+exit "$native_status"
+"""
+{% elif native_check_keep_seconds %}
+description = "Maintain native check directories"
+run = "chrono-host-bootstrap native-scratch maintain {{ native_check_keep_seconds }}"
+{% else %}
 description = "Maintain registered local check originals"
 run = "chrono-harness retention --host-root . --request .chrono-harness/maintain-checks.json"
 {% endif %}
-{% if features or generate_check or local_check_retention %}
+{% endif %}
+{% if features or generate_check or local_check_retention or native_check_keep_seconds %}
 [tasks.harness-setup]
 description = "Install this repository's selected tools"
 {% if local_check_retention %}

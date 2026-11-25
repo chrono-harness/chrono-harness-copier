@@ -29,7 +29,7 @@ uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
   -d 'features=[]' -d local_check_retention=true "$PWD" "$stage/local-check-retention"
 uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
   -d 'features=[]' -d local_check_retention=true \
-  -d 'expire_local_check_slots=[".chrono-harness/state/collection/check.json",".chrono-harness/state/other/a b.json"]' \
+  -d native_check_keep_seconds=45 -d 'expire_local_check_slots=[".chrono-harness/state/collection/check.json",".chrono-harness/state/other/a b.json"]' \
   "$PWD" "$stage/expiring-checks"
 if uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
     -d 'features=[]' -d local_check_retention=true \
