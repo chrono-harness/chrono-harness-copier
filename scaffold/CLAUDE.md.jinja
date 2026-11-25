@@ -14,7 +14,7 @@
 
 ```sh
 mise trust
-mise run harness-setup
+mise run{% if tool_install_channels != 'pinned' %} --skip-tools{% endif %} harness-setup
 ```
 
 {% if features %}
@@ -38,7 +38,7 @@ mise run harness-setup
 
 默认采用上游全部现有规则和以后新增的规则。`.chrono-harness/rules.json` 中的 `{"mode":"all"}` 表示全选。要屏蔽个别规则，在 all 模式设置 `exclude`。要只选几条，设置 `mode` 为 `only` 并填写 `include`。要关闭继承，使用 `{"mode":"off"}`。
 
-下方是本次检出可直接阅读的规则。开始任务时运行 `mise run harness-setup`，它会安装所选工具并按本仓规则选择刷新下方正文。成功后重新阅读本文件。上游暂时不可达时，命令报告失败并保留已有正文。本仓追加说明写在生成块外。规则来源与许可见 [来源说明](docs/licenses/methodology-attribution.md) 和 [Apache-2.0](docs/licenses/trureturing-Apache-2.0.txt)。
+下方是本次检出可直接阅读的规则。开始任务时运行 `mise run{% if tool_install_channels != 'pinned' %} --skip-tools{% endif %} harness-setup`，它会安装所选工具并按本仓规则选择刷新下方正文。成功后重新阅读本文件。上游暂时不可达时，命令报告失败并保留已有正文。本仓追加说明写在生成块外。规则来源与许可见 [来源说明](docs/licenses/methodology-attribution.md) 和 [Apache-2.0](docs/licenses/trureturing-Apache-2.0.txt)。
 
 {% raw %}<!-- chrono-instructions:begin -->
 本文件由登记规则生成。请修改登记源后重新生成，不要单独编辑本文件。生成成功不代表规则已被遵守或检查已执行。

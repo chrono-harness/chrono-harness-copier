@@ -1,3 +1,4 @@
+{%- set install_command = 'mise install' if tool_install_channels == 'pinned' else 'sh .chrono-harness/install-tools.sh' -%}
 //! These two adapters use the registered bootstrap table and release program.
 //! The shell reader checks the observed commands, platform cases and selected control dependencies.
 //! The release YAML reader supplies typed fields; Actions executes job dependencies.
@@ -40,11 +41,11 @@ pub fn requires_success(needs_id: &String, predecessor: &String, explicit_if: bo
 {% if features or generate_check %}/// A mise setup installs tools first and refreshes the rules only when selected.
 pub fn setup_sequence(commands: &[String], instructions: bool) -> (accepted: bool)
     ensures accepted == (commands.len() == (if instructions { 2usize } else { 1usize })
-        && commands@[0]@ == "mise install"@
+        && commands@[0]@ == "{{ install_command }}"@
         && (!instructions || commands@[1]@ == "mise exec -- chrono-instructions sync-rules --host-root ."@)),
 {
     if commands.len() != (if instructions { 2usize } else { 1usize }) { return false; }
-    commands[0] == "mise install".to_string() && (!instructions
+    commands[0] == "{{ install_command }}".to_string() && (!instructions
         || commands[1] == "mise exec -- chrono-instructions sync-rules --host-root .".to_string())
 }
 
@@ -149,18 +150,18 @@ mod native {
         let Ok(doc) = source.parse::<toml::Table>() else {
             return false;
         };
-        let Some(tools) = doc.get("tools").and_then(toml::Value::as_table) else {
+{% if tool_install_channels == 'pinned' %}        let Some(tools) = doc.get("tools").and_then(toml::Value::as_table) else {
             return false;
         };
-        let Some(setup) = doc
+{% endif %}        let Some(setup) = doc
             .get("tasks")
             .and_then(|tasks| tasks.get("harness-setup"))
             .and_then(toml::Value::as_table)
         else {
             return false;
         };
-        if tools.contains_key("http:chrono-instructions") != instructions
-            || setup.keys().any(|key| key != "run" && key != "description")
+        if {% if tool_install_channels == 'pinned' %}tools.contains_key("http:chrono-instructions") != instructions
+            || {% endif %}setup.keys().any(|key| key != "run" && key != "description")
         {
             return false;
         }
@@ -187,7 +188,7 @@ mod native {
         let selected = {{ "true" if "instructions" in features else "false" }};
         assert!(setup_matches(original, selected));
         assert!(!setup_matches(
-            &original.replace("mise install", "mise install --dry-run"),
+            &original.replace("{{ install_command }}", "{{ install_command }} --dry-run"),
             selected
         ));
         assert!(!setup_matches(
@@ -197,12 +198,12 @@ mod native {
             ),
             selected
         ));
-        let install_only = "[tools]\n[tasks.harness-setup]\nrun = 'mise install'";
+        let install_only = "[tools]\n[tasks.harness-setup]\nrun = '{{ install_command }}'";
         assert!(setup_matches(install_only, false));
         assert!(!setup_matches(install_only, true));
-        let reverse = "[tools.'http:chrono-instructions']\n[tasks.harness-setup]\nrun=['mise exec -- chrono-instructions sync-rules --host-root .','mise install']";
+        let reverse = "[tools.'http:chrono-instructions']\n[tasks.harness-setup]\nrun=['mise exec -- chrono-instructions sync-rules --host-root .','{{ install_command }}']";
         assert!(!setup_matches(reverse, true));
-        let extra = "[tools]\n[tasks.harness-setup]\nrun = ['mise install', 'another-command']";
+        let extra = "[tools]\n[tasks.harness-setup]\nrun = ['{{ install_command }}', 'another-command']";
         assert!(!setup_matches(extra, false));
     }
 
