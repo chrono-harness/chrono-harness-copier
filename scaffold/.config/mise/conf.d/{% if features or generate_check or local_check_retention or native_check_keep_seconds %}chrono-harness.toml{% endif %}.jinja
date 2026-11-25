@@ -1,12 +1,9 @@
 {%- import 'tool-catalog.jinja' as tools with context -%}
 {%- set selected_tools = tools.selected_tools -%}
-{% if tool_install_channels == 'pinned' %}
-{{ tools.pins() }}
-{% else %}
-# Install tasks resolve fresh release metadata before mise can install an old receipt.
+# Resolve and verify the selected tools before task execution installs anything.
 [settings.task]
 run_auto_install = false
-{% endif %}
+{{ tools.pins() }}
 {% if 'rust' in selected_tools %}
 [tools.rust]
 version = "1.95.0"
@@ -48,7 +45,7 @@ run = "chrono-harness retention --host-root . --request .chrono-harness/maintain
 {% if features or generate_check or local_check_retention or native_check_keep_seconds %}
 [tasks.harness-setup]
 description = "Install this repository's selected tools"
-{% set install = 'mise install' if tool_install_channels == 'pinned' else 'sh .chrono-harness/install-tools.sh' %}
+{% set install = 'sh .chrono-harness/install-tools.sh' %}
 {% if local_check_retention %}
 run = [
     {{ install | to_json }},

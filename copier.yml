@@ -174,23 +174,22 @@ release_plan:
 
 tool_install_channels:
   type: str
-  choices: [pinned, dev, all]
   default: pinned
-  help: 工具安装策略。pinned 使用模板配方，dev 在开发分支每次安装时解析最新公开测试版，all 也在 main 解析最新正式版。
-integration_tool_tags:
+  help: 默认选用固定配方 pinned、最新正式版 stable、最新测试版 preview 或精确 v 标签。
+  validator: >-
+    {{ '' if tool_install_channels in ('pinned', 'stable', 'preview')
+       or tool_install_channels | regex_search('^v[0-9]+[.][0-9]+[.][0-9]+(-[A-Za-z0-9-]+([.][A-Za-z0-9-]+)*)?\\Z')
+       else '需要 pinned、stable、preview 或精确 v 版本标签' }}
+tool_versions:
   type: json
   default: {}
-  when: "{{ tool_install_channels != 'pinned' }}"
-  help: 以 integration/分支名和工具命令名为键，为个别工具选精确发行标签。其余选装工具跟随开发渠道。
+  help: 为个别已选组织工具指定精确发行标签，例如 {"chrono-pr":"v0.1.12-alpha.109"}。
   validator: |
-    {%- if integration_tool_tags is not mapping -%}需要分支到工具标签的对象
+    {%- if tool_versions is not mapping -%}需要工具命令名到精确标签的对象
     {%- else -%}
     {%- set selected = namespace(commands=['chrono-harness'] if local_check_retention else []) -%}
     {%- if native_check_keep_seconds -%}{%- set selected.commands = selected.commands + ['chrono-host-bootstrap'] -%}{%- endif -%}
     {%- for f in features -%}{%- set selected.commands = selected.commands + tool_dependencies[f] -%}{%- endfor -%}
-    {%- for branch, pins in integration_tool_tags.items() -%}
-    {%- if branch is not string or not (branch | regex_search('^integration/[A-Za-z0-9_./-]+$')) or pins is not mapping -%}需要 integration 分支名和标签对象
-    {%- else -%}
-    {%- for command, tag in pins.items() -%}
-    {%- if command not in selected.commands or not command.startswith('chrono-') or tag is not string or not (tag | regex_search('^v[0-9]+[.][0-9]+[.][0-9]+(-[A-Za-z0-9.-]+)?$')) -%}需要已选组织工具名和精确 v 版本标签
-    {%- endif -%}{%- endfor -%}{%- endif -%}{%- endfor -%}{%- endif -%}
+    {%- for command, tag in tool_versions.items() -%}
+    {%- if command not in selected.commands or not command.startswith('chrono-') or tag is not string or not (tag | regex_search('^v[0-9]+[.][0-9]+[.][0-9]+(-[A-Za-z0-9-]+([.][A-Za-z0-9-]+)*)?\\Z')) -%}需要已选组织工具名和精确 v 版本标签
+    {%- endif -%}{%- endfor -%}{%- endif -%}

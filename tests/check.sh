@@ -98,9 +98,9 @@ uv run --no-project --python ">=3.11" python tests/check_render.py "$stage/empty
 
 # Install and update a rendered tool pair entirely through mocked command boundaries.
 uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
-  -d 'features=["test-git"]' -d tool_install_channels=all \
-  -d 'integration_tool_tags={"integration/verify":{"chrono-test-git":"v1.2.3"}}' . "$stage/install-channels"
-uv run --no-project --python ">=3.11" python tests/test_install.py "$stage/install-channels"
+  -d 'features=["test-git"]' -d tool_install_channels=preview \
+  -d 'tool_versions={"chrono-test-git":"v1.2.3"}' . "$stage/install-channels"
+uv run --no-project --python ">=3.11" python tests/test_install.py "$stage/install-channels" "$stage/test-git"
 
 # Exercise a real host that edits its guide and later changes its tool choices.
 (
