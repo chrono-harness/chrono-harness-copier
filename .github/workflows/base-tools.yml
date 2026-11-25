@@ -1,9 +1,9 @@
 name: Install base tools
 on:
   push:
-    paths: [.config/mise/conf.d/chrono-harness.toml, .github/workflows/base-tools.yml]
+    paths: [.chrono-harness/install-tools.sh, .config/mise/conf.d/chrono-harness.toml, .github/workflows/base-tools.yml]
   pull_request:
-    paths: [.config/mise/conf.d/chrono-harness.toml, .github/workflows/base-tools.yml]
+    paths: [.chrono-harness/install-tools.sh, .config/mise/conf.d/chrono-harness.toml, .github/workflows/base-tools.yml]
   workflow_dispatch:
 permissions:
   contents: read
@@ -21,6 +21,10 @@ jobs:
         with:
           version: 2026.11.12
           cache: false
+          install: false
+      - run: mise run harness-setup
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
       - name: Run the installed commands
         shell: bash
         run: |
@@ -28,7 +32,6 @@ jobs:
           mise ls --current
           verus --version
           chrono-pr pr-reminders
-          mise run harness-setup
           grep -Fxq '<!-- chrono-instructions:begin -->' CLAUDE.md
           test ! -e .chrono-harness/instructions/catalog.json
           test "$(readlink AGENTS.md)" = CLAUDE.md
