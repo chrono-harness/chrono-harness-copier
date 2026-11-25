@@ -116,5 +116,5 @@ for command in {{ commands | join(' ') }}; do
     executable=$(mise -C "$work" which "$command")
     verify "$executable" "${expected#sha256:}"
 done
-mv -f "$manifest" "$resolved"
+mv -f "$manifest" "$config_dir/.chrono-harness-installed"
 {% endif -%}
