@@ -1,3 +1,6 @@
+# Resolve and verify the selected tools before task execution installs anything.
+[settings.task]
+run_auto_install = false
 
 [tools."http:chrono-cache"]
 version = "0.1.0-alpha.3"
@@ -186,7 +189,7 @@ run = "chrono-host-bootstrap native-scratch maintain 86400"
 
 [tasks.harness-setup]
 description = "Install this repository's selected tools"
-run = ["mise install", "mise exec -- chrono-instructions sync-rules --host-root ."]
+run = ["sh .chrono-harness/install-tools.sh", "mise exec -- chrono-instructions sync-rules --host-root ."]
 
 
 [tasks.refresh-template-rules]
