@@ -8,9 +8,6 @@
 {{ project_guide }}
 
 {% endif %}
-{% if local_check_retention %}
-本地检查原件的保留窗口和定时维护入口见 [.chrono-harness/USAGE.md](.chrono-harness/USAGE.md)。需要保留的报告和原件应在窗口内转存。
-{% endif %}
 {% if generate_check %}
 修改后执行 `mise run harness-check`。本仓登记的实际命令为 `{{ check_command }}`。GitHub Actions 在 `{{ check_os }}` 运行同一入口。
 {% elif not project_guide %}

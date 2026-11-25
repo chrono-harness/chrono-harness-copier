@@ -69,6 +69,13 @@ assert json.loads((selected / ".chrono-harness/pr.json").read_text())["base"] ==
 assert (selected / ".github/workflows/harness-check.yml").is_file()
 assert config["tasks"]["harness-check"]["run"] == "python3 check.py"
 
+def rule_block(text):
+    _, begin, remaining = text.partition("<!-- chrono-instructions:begin -->")
+    block, end, _ = remaining.partition("<!-- chrono-instructions:end -->")
+    assert begin and end
+    return block
+
+
 for host in (empty, selected, full):
     assert (host / "AGENTS.md").readlink() == Path("CLAUDE.md")
     assert (host / "CLAUDE.md").is_file()
@@ -78,8 +85,9 @@ for host in (empty, selected, full):
     if host == full:
         assert json.loads((host / ".chrono-harness/rules.json").read_text()) == {"mode": "all"}
         assert "## job.wait" in guide and "## artifact.cleanup" in guide
-        expected_block = Path("CLAUDE.md").read_text().split("<!-- chrono-instructions:begin -->", 1)[1].split("<!-- chrono-instructions:end -->", 1)[0]
-        assert "<!-- chrono-instructions:begin -->" + expected_block + "<!-- chrono-instructions:end -->" in guide
+        assert rule_block(guide) == rule_block(Path("CLAUDE.md").read_text())
+        assert not (host / ".chrono-harness/published-rules.json").exists()
+        assert "published_instruction_feeds" not in (host / ".chrono-harness/template-answers.yml").read_text()
         assert (host / "docs/licenses/trureturing-Apache-2.0.txt").is_file()
     else:
         assert not (host / ".chrono-harness/rules.json").exists()

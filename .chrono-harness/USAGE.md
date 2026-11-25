@@ -6,6 +6,8 @@
 
 开发分支为 `dev`，正式分支为 `main`。
 
+[组织协作规范](https://github.com/chrono-harness/chrono-harness-instructions/blob/dev/docs/contributing.md)
+
 首次检出运行 `mise trust` 和 `mise run harness-setup`。工具版本见 [.config/mise/conf.d/chrono-harness.toml](../.config/mise/conf.d/chrono-harness.toml)。
 
 刷新根指南使用 `mise run harness-setup`。本仓选择在 `.chrono-harness/rules.json`。
