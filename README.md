@@ -26,7 +26,7 @@ mise run harness-setup
 
 已有项目从旧的 `dev` 或 `all` 选项升级时，运行 Copier 更新并以 `-d tool_install_channels=preview` 或 `-d tool_install_channels=stable` 选择本仓默认值。原来按 integration 分支保存的标签可直接放入 `tool_versions`，以后在任意分支都生效。
 
-CI 使用 `sh .chrono-harness/install-tools.sh` 进行同样的安装。固定配方直接使用宿主登记的 URL 和 SHA-256。动态选择时，安装器读取 GitHub Releases，核对两平台资产和本机实际 SHA-256，通过后一次发布本检出的动态覆盖清单 `.config/mise/conf.d/zz-chrono-harness-resolved.toml`，供 `mise which` 和 `mise exec` 使用。缺少或截断 GitHub 的最终响应头时，安装器停止分页并返回错误。遇到缺失发行、网络、清单发布或校验错误，安装失败并保留上次成功结果。全部回到固定配方并安装成功时，安装器撤下此前的动态覆盖。
+CI 使用 `sh .chrono-harness/install-tools.sh` 进行同样的安装。固定配方直接使用宿主登记的 URL 和 SHA-256。动态选择时，安装器读取 GitHub Releases，核对两平台资产和本机实际 SHA-256，通过后一次发布本检出的版本和校验值文件 `.chrono-harness/state/tool-selection/versions.toml`。受跟踪的 mise 配方根据版本从已登记的仓库下载。该目录只接受这一普通文件，供 `mise which` 和 `mise exec` 使用。缺少或截断 GitHub 的最终响应头时，安装器停止分页并返回错误。遇到缺失发行、网络、清单发布或校验错误，安装失败并保留上次成功结果。升级已有动态覆盖的宿主时，mise 继续使用旧覆盖，直至新安装成功。全部回到固定配方并安装成功时，安装器撤下此前的动态覆盖。
 
 安装时可填写本仓职责、源码位置和验证命令，模板会将它们直接写入根指南。每个仓库的 `AGENTS.md` 链接到本仓的 `CLAUDE.md`。默认生成的根文件包含首次安装、PR 与验证入口，以及 chrono-harness-instructions 发布的默认规则全文。克隆仓库即可阅读。工具的版本和校验值在本仓的 mise 清单中。
 
