@@ -1,0 +1,48 @@
+{%- import 'tool-catalog.jinja' as tools with context -%}
+{%- set commands = tools.selected_tools | select('in', tools.catalog) | sort | list -%}
+{%- set version -%}{% raw -%}
+{% if vars.chrono_selection is exists %}
+{% set data = read_toml(path=vars.chrono_selection) %}
+{% endif %}
+{% if data is defined and "COMMAND" in data %}
+{% set version = data["COMMAND"][0] %}
+{% if version is matching(pat="^[0-9]+[.][0-9]+[.][0-9]+(-[A-Za-z0-9-]+([.][A-Za-z0-9-]+)*)?$") %}
+{{ version }}
+{% else %}{{ throw(message="Invalid installed release version") }}{% endif %}
+{% endif %}
+{%- endraw %}{%- endset -%}
+{%- set selected_version -%}{% raw -%}
+{% if SELECTED %}{{ SELECTED }}{% else %}{{ PIN["version"] }}{% endif %}
+{%- endraw %}{%- endset -%}
+{%- set url -%}{% raw -%}
+{% if SELECTED %}https://github.com/REPOSITORY/releases/download/v{{ SELECTED }}/ASSET{% else %}{{ PLATFORM["url"] }}{% endif %}
+{%- endraw %}{%- endset -%}
+{%- set checksum -%}{% raw -%}
+{% if SELECTED %}
+{% set hash = read_toml(path=vars.chrono_selection)["COMMAND"][INDEX] %}
+{% if hash is matching(pat="^sha256:[a-f0-9]{64}$") %}
+{{ hash }}
+{% else %}{{ throw(message="Invalid installed release checksum") }}{% endif %}
+{% else %}{{ PLATFORM["checksum"] }}{% endif %}
+{%- endraw %}{%- endset -%}
+{% if commands -%}
+# The checkout supplies the tool names and download locations. Installed data contains versions and SHA-256 only.
+[vars]
+chrono_selection = '{{ "{{ config_root }}" }}/.chrono-harness/state/tool-selection/versions.toml'
+chrono_pins = '{{ "{{ config_root }}" }}/.config/mise/conf.d/chrono-harness.toml'
+{% for command in commands -%}
+selected_{{ command | replace('-', '_') }} = {{ version | replace('COMMAND', command) | replace('\n', '') | to_json }}
+{% endfor %}
+{% for command in commands %}
+{% set selected = 'vars.selected_' ~ command | replace('-', '_') -%}
+{% set pin = 'read_toml(path=vars.chrono_pins)["tools"]["http:' ~ command ~ '"]' -%}
+[tools."http:{{ command }}"]
+version = {{ selected_version | replace('SELECTED', selected) | replace('PIN', pin) | to_json }}
+bin = "{{ command }}"
+[tools."http:{{ command }}".platforms]
+{% for platform, suffix, index in [('linux-x64','linux-x86_64','1'),('macos-arm64','macos-aarch64','2')] -%}
+{% set config = pin ~ '["platforms"]["' ~ platform ~ '"]' -%}
+{{ platform }} = { url = {{ url | replace('SELECTED', selected) | replace('PLATFORM', config) | replace('REPOSITORY', tools.catalog[command][0]) | replace('ASSET', command ~ '-' ~ suffix) | to_json }}, checksum = {{ checksum | replace('SELECTED', selected) | replace('PLATFORM', config) | replace('COMMAND', command) | replace('INDEX', index) | replace('\n','') | to_json }} }
+{% endfor -%}
+{% endfor -%}
+{% endif -%}

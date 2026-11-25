@@ -99,9 +99,11 @@ def external(name, args):
             print(os.environ.get("DISABLED", "[]"))
         elif args[:3] == ["config", "get", "--file"]:
             config = tomllib.loads(Path(args[3]).read_text())
-            tool, field = re.fullmatch(r'tools\."(http:[a-z-]+)"\.(version|platforms\.linux-x64\.checksum)', args[4]).groups()
-            selected = config["tools"][tool]
-            print(selected["version"] if field == "version" else selected["platforms"]["linux-x64"]["checksum"])
+            tool, field = re.fullmatch(r'tools\."(http:[a-z-]+)"\.(.+)', args[4]).groups()
+            value = config["tools"][tool]
+            for key in field.split("."):
+                value = value[key]
+            print(value)
         else:
             assert args[0] == "-C"
             if args[2] == "install":
@@ -127,7 +129,8 @@ def exercise(host, state, *, pinned):
     seed = re.search(r"Linux-x86_64\).*?seed_sha=([a-f0-9]{64})", installer.read_text())[1]
     env = dict(PATH=str(state) + os.pathsep + os.defpath, INSTALL_FIXTURE=str(state), SEED_DIGEST=seed,
                PREVIEW="1.0.0-alpha.1")
-    receipt = host / ".config/mise/conf.d/zz-chrono-harness-resolved.toml"
+    receipt = host / ".chrono-harness/state/tool-selection/versions.toml"
+    receipt.parent.mkdir(parents=True)
     assert not receipt.is_symlink() and not receipt.exists()
 
     def run(status=0, **options):
@@ -139,8 +142,8 @@ def exercise(host, state, *, pinned):
         return [json.loads(line) for line in (state / "calls").read_text().splitlines()]
 
     def versions():
-        tools = tomllib.loads(receipt.read_text()).get("tools", {}) if receipt.exists() else {}
-        return {key: value["version"] for key, value in tools.items()}
+        tools = tomllib.loads(receipt.read_text()) if receipt.exists() else {}
+        return {"http:" + name: values[0] for name, values in tools.items()}
 
     # A directory is a destination operand to mv. Reject it before staging or publishing.
     receipt.mkdir()
@@ -156,6 +159,13 @@ def exercise(host, state, *, pinned):
     assert receipt.is_symlink() and not (state / "uncreated").exists()
     assert not any(call[0] == "curl" for call in calls)
     receipt.unlink()
+
+    for filename in ("source.swift", "versions.toml.copy", ".hidden"):
+        neighbor = receipt.with_name(filename)
+        neighbor.write_bytes(b"keep")
+        calls = run(1, CHRONO_TOOL_CHANNEL="stable")
+        assert neighbor.read_bytes() == b"keep" and not any(row[0] == "curl" for row in calls)
+        neighbor.unlink()
 
     if pinned:
         base = host / ".config/mise/conf.d/chrono-harness.toml"
