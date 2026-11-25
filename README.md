@@ -20,9 +20,11 @@ mise run harness-setup
 
 首次安装选择最新的正式版本。用 `--vcs-ref <tag>` 可以选择指定正式版或预览版。Copier 将选中的标签和本仓答案写入 `.chrono-harness/template-answers.yml`。
 
-每个仓库可以独立选择各工具的发行版本。默认 `tool_install_channels: pinned` 读取宿主的 `.config/mise/conf.d/chrono-harness.toml` 固定配方。也可以把默认值设为 `stable`（最新公开正式版）、`preview`（最新公开测试版）或精确的 `v` 标签。按命令设置 `tool_versions` 可单独固定某个工具，例如 `{"chrono-pr":"v0.1.12-alpha.109"}`。Rust 和 Verus 使用配对的固定工具链。
+每个仓库可以独立选择各工具的发行版本。默认 `tool_install_channels: pinned` 读取宿主的 `.config/mise/conf.d/chrono-harness.toml` 固定配方。也可以把默认值设为 `stable`（最新公开正式版）、`preview`（最新公开测试版）或精确的 `v` 标签。按命令设置 `tool_versions`，同一仓库可以混用通道和精确标签。例如仓库选 `preview`，在 `tool_versions` 中填写 `{"chrono-pr":"stable","chrono-diagnostics":"v0.1.0"}`，其余工具继续跟随最新测试版。Rust 和 Verus 使用配对的固定工具链。
 
 临时试用测试版可运行 `CHRONO_TOOL_CHANNEL=preview mise run harness-setup`。该环境变量也接受 `stable` 或精确标签，如 `v0.1.0-alpha.3`，覆盖本次安装的所有已选组织工具。移除变量后再次运行安装，先采用每个工具的 `tool_versions`，其余工具采用 `tool_install_channels`。本地分支、标签和 detached HEAD 都遵循相同顺序。选择同一个精确标签时，每个启用的组织工具都须公开该标签及两平台资产。
+
+已有项目从旧的 `dev` 或 `all` 选项升级时，运行 Copier 更新并以 `-d tool_install_channels=preview` 或 `-d tool_install_channels=stable` 选择本仓默认值。原来按 integration 分支保存的标签可直接放入 `tool_versions`，以后在任意分支都生效。
 
 CI 使用 `sh .chrono-harness/install-tools.sh` 进行同样的安装。固定配方直接使用宿主登记的 URL 和 SHA-256。动态选择时，安装器读取 GitHub Releases，核对两平台资产和本机实际 SHA-256，通过后一次发布本检出的动态覆盖清单 `.config/mise/conf.d/zz-chrono-harness-resolved.toml`，供 `mise which` 和 `mise exec` 使用。遇到缺失发行、网络或校验错误，安装失败并保留上次成功结果。全部回到固定配方并安装成功时，安装器撤下此前的动态覆盖。
 
