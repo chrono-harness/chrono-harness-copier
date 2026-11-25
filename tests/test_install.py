@@ -12,6 +12,9 @@ from pathlib import Path
 
 # The same Python program is the fake external command and its test driver.
 # The shell under test sees the normal argv, stdin, output files and exit status.
+NEXT = 'HTTP/2 200\r\nLink: <url>; rel="next"\r\n\r\n'
+DONE = "HTTP/2 200\r\n\r\n"
+
 def external(name, args):
     state = Path(os.environ["INSTALL_FIXTURE"])
     with (state / "calls").open("a") as log:
@@ -30,18 +33,53 @@ def external(name, args):
             if os.environ.get("FAULT") == "api":
                 return 22
             number = args[-1].rsplit("=", 1)[1]
-            assert number in ("1", "2")
-            Path(args[args.index("-D") + 1]).write_text('Link: <url>; rel="next"\n' if number == "1" else "")
+            last = int(os.environ.get("LAST_PAGE", "2"))
+            assert 1 <= int(number) <= last
+            headers = Path(args[args.index("-D") + 1])
+            if os.environ.get("FAULT") != "no-headers":
+                raw = NEXT if int(number) < last else DONE
+                if os.environ.get("FAULT") == "truncated":
+                    raw = "HTTP/2 200\r\n"
+                headers.write_bytes(raw.encode())
             output.write_text(number)
+    elif name in ("mv", "rm"):
+        target = Path(args[-1])
+        if args[:2] == ["-rf", "--"]:
+            assert target.name.startswith((".chrono-install.", "chrono-install."))
+            shutil.rmtree(target)
+        else:
+            assert args[0] == "-f" and target == Path.cwd() / ".config/mise/conf.d/zz-chrono-harness-resolved.toml"
+            if os.environ.get("FAULT") == name:
+                return 17
+            if name == "mv":
+                assert len(args) == 3
+                Path(args[1]).replace(target)
+            else:
+                assert len(args) == 2
+                target.unlink(missing_ok=True)
     elif name == "sha256sum":
         data = sys.stdin.buffer.read()
         digest = os.environ["SEED_DIGEST"] if data == (state / "mock").read_bytes() else hashlib.sha256(data).hexdigest()
         print(digest, "-")
     elif name == "chrono-host-release":
+        if args[:2] == ["resolve-install-v1", "--page-state"]:
+            assert len(args) == 3
+            path = Path(args[2])
+            if not path.is_file():
+                return 2
+            states = {NEXT.encode(): "next", DONE.encode(): "done"}
+            if path.read_bytes() not in states:
+                return 2
+            print(states[path.read_bytes()])
+            return 0
         operation, flag, command, repo, selector, linux, mac, *pages = args
         assert (operation, flag, repo) == ("resolve-install-v1", "--mise-tool", "chrono-harness/chrono-harness-test-git")
         assert (linux, mac) == (command + "-linux-x86_64", command + "-macos-aarch64")
-        assert [Path(p).read_text() for p in pages] == ["1", "2"]
+        last = int(os.environ.get("LAST_PAGE", "2"))
+        if os.environ.get("FAULT") in ("no-headers", "truncated"):
+            # A partial array is valid release JSON; the resolver cannot detect the missing page.
+            last = 1
+        assert [Path(p).read_text() for p in pages] == [str(i) for i in range(1, last + 1)]
         if os.environ.get("FAULT") == "selection":
             return 2
         if selector == "preview":
@@ -83,7 +121,7 @@ def exercise(host, state, *, pinned):
     mock = state / "mock"
     mock.write_text("#!" + sys.executable + "\n" + Path(__file__).read_text())
     mock.chmod(0o700)
-    for name in ("git", "uname", "curl", "sha256sum", "mise"):
+    for name in ("git", "uname", "curl", "sha256sum", "mise", "mv", "rm"):
         (state / name).symlink_to(mock.name)
     installer = host / ".chrono-harness/install-tools.sh"
     seed = re.search(r"Linux-x86_64\).*?seed_sha=([a-f0-9]{64})", installer.read_text())[1]
@@ -97,6 +135,7 @@ def exercise(host, state, *, pinned):
         result = subprocess.run(["/bin/sh", str(installer)], cwd=host, env={**env, **options},
                                 capture_output=True, text=True)
         assert result.returncode == status, (result.returncode, result.stderr)
+        assert not list(receipt.parent.glob(".chrono-install.*"))
         return [json.loads(line) for line in (state / "calls").read_text().splitlines()]
 
     def versions():
@@ -136,13 +175,18 @@ def exercise(host, state, *, pinned):
         before = receipt.read_bytes()
         run(9, FAULT="install")
         assert receipt.read_bytes() == before
+        calls = run(17, FAULT="rm")
+        assert receipt.read_bytes() == before and not any(c[0] in ("curl", "chrono-host-release") for c in calls)
         calls = run()
         assert not receipt.exists() and not any(c[0] == "curl" for c in calls)
         assert base.read_text() == selection
         return
 
-    first = run()
-    assert len([c for c in first if c[0] == "curl" and "-D" in c]) == 2
+    for fault, status in (("no-headers", 2), ("truncated", 2), ("mv", 17)):
+        run(status, FAULT=fault)
+        assert not receipt.exists()
+    first = run(LAST_PAGE="10")
+    assert len([c for c in first if c[0] == "curl" and "-D" in c]) == 10
     primary = "http:chrono-test-git"
     profile = "http:chrono-test-git-profile"
     assert versions() == {primary: "1.2.3", profile: "1.0.0-alpha.1"}
@@ -174,7 +218,7 @@ def exercise(host, state, *, pinned):
         calls = run(1, CHRONO_TOOL_CHANNEL=invalid)
         assert not any(c[0] == "curl" for c in calls)
         assert receipt.read_bytes() == before
-    for fault, status in (("api", 22), ("selection", 2), ("cache", 1), ("install", 9)):
+    for fault, status in (("api", 22), ("selection", 2), ("no-headers", 2), ("truncated", 2), ("mv", 17), ("cache", 1), ("install", 9)):
         run(status, FAULT=fault)
         assert receipt.read_bytes() == before
     run(DISABLED='["http:chrono-test-git"]')
