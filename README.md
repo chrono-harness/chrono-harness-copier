@@ -57,6 +57,8 @@ uvx --from copier==9.19.1 copier update --vcs-ref :current: --answers-file .chro
 
 全部工具和业务检查都取消时，可以跳过 mise 步骤。选择记录位于 `.chrono-harness/template-answers.yml`，规则取舍归宿主的 `.chrono-harness/rules.json`。
 
+旧宿主按 ID 裁剪过规则时，Copier 的三方合并可能在 `CLAUDE.md` 中标出冲突。若冲突都在 `chrono-instructions:begin` 和 `chrono-instructions:end` 之间，运行 `mise run harness-setup` 会按宿主的 `rules.json` 重建该块。核对块外的本仓说明后，用 `git add -- CLAUDE.md` 记录解决结果。块外的冲突按宿主实际修改合并。
+
 ## 迁移已有宿主的 Copier 来源
 
 原 `chrono-harness-template` 的 Copier 宿主保留自己的选择和追加说明。迁移前提交已修改的文件，从 `.chrono-harness/template-answers.yml` 读取当前 `_commit` 标签，在新旧源上核对同一标签的 Git 文件树。以下命令在宿主内执行，将第一行的标签改成本仓当前记录的值。
