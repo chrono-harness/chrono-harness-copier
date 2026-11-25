@@ -17,10 +17,8 @@ jobs:
         with:
           version: 2026.11.12
           cache: false
-{% if tool_install_channels != 'pinned' %}
           install: false
       - run: sh .chrono-harness/install-tools.sh
         env:
           GITHUB_TOKEN: {{ '${{ github.token }}' }}
-{% endif %}
       - run: mise run harness-check

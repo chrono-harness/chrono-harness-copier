@@ -17,14 +17,7 @@ def external(name, args):
     with (state / "calls").open("a") as log:
         print(json.dumps([name, *args]), file=log)
     if name == "git":
-        if args == ["symbolic-ref", "--quiet", "--short", "HEAD"]:
-            branch = os.environ.get("TEST_BRANCH", "dev")
-            if not branch:
-                return 1
-            print(branch)
-        else:
-            assert args == ["rev-parse", "HEAD"]
-            print("fixed-checkout")
+        raise AssertionError("install must not read the consumer's Git branch")
     elif name == "uname":
         print({"-s": "Linux", "-m": "x86_64"}[args[0]])
     elif name == "curl":
@@ -51,7 +44,13 @@ def external(name, args):
         assert [Path(p).read_text() for p in pages] == ["1", "2"]
         if os.environ.get("FAULT") == "selection":
             return 2
-        version = os.environ["PREVIEW"] if selector == "preview" else "1.0.0" if selector == "stable" else selector.removeprefix("v")
+        if selector == "preview":
+            version = os.environ["PREVIEW"]
+        elif selector == "stable":
+            version = os.environ.get("STABLE", "1.0.0")
+        else:
+            assert re.fullmatch(r"v\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?", selector)
+            version = selector[1:]
         digest = hashlib.sha256(command.encode()).hexdigest()
         print(f'[tools."http:{command}"]\nversion="{version}"\nbin="{command}"')
         print(f'[tools."http:{command}".platforms]')
@@ -79,7 +78,7 @@ def external(name, args):
     return 0
 
 
-def exercise(host, state):
+def exercise(host, state, *, pinned):
     mock = state / "mock"
     mock.write_text("#!" + sys.executable + "\n" + Path(__file__).read_text())
     mock.chmod(0o700)
@@ -100,24 +99,62 @@ def exercise(host, state):
         return [json.loads(line) for line in (state / "calls").read_text().splitlines()]
 
     def versions():
-        return {key: value["version"] for key, value in tomllib.loads(receipt.read_text()).get("tools", {}).items()}
+        tools = tomllib.loads(receipt.read_text()).get("tools", {}) if receipt.exists() else {}
+        return {key: value["version"] for key, value in tools.items()}
+
+    if pinned:
+        base = host / ".config/mise/conf.d/chrono-harness.toml"
+        selection = base.read_text()
+        for name, config in tomllib.loads(selection)["tools"].items():
+            binary = name.removeprefix("http:")
+            digest = hashlib.sha256(binary.encode()).hexdigest()
+            selection = selection.replace(config["platforms"]["linux-x64"]["checksum"], "sha256:" + digest)
+        base.write_text(selection)
+        calls = run()
+        assert not receipt.exists() and not any(c[0] == "curl" for c in calls)
+        run(CHRONO_TOOL_CHANNEL="stable")
+        assert set(versions().values()) == {"1.0.0"}
+        before = receipt.read_bytes()
+        run(9, FAULT="install")
+        assert receipt.read_bytes() == before
+        calls = run()
+        assert not receipt.exists() and not any(c[0] == "curl" for c in calls)
+        assert base.read_text() == selection
+        return
 
     first = run()
     assert len([c for c in first if c[0] == "curl" and "-D" in c]) == 2
-    assert set(versions().values()) == {"1.0.0-alpha.1"}
+    primary = "http:chrono-test-git"
+    profile = "http:chrono-test-git-profile"
+    assert versions() == {primary: "1.2.3", profile: "1.0.0-alpha.1"}
+    # The repository pin survives new releases. Explicit installation choices override it.
     run(PREVIEW="1.0.0-alpha.2")
-    assert set(versions().values()) == {"1.0.0-alpha.2"}
+    assert versions() == {primary: "1.2.3", profile: "1.0.0-alpha.2"}
+    for branch, selector, expected in (
+        ("main", "preview", "1.0.0-alpha.1"),
+        ("dev", "stable", "1.0.0"),
+        ("personal/experiment", "v2.4.1", "2.4.1"),
+        ("", "preview", "1.0.0-alpha.1"),
+        ("", "v2.4.1-rc.2", "2.4.1-rc.2"),
+    ):
+        context = dict(GITHUB_ACTIONS="true", GITHUB_SHA="detached-sha",
+                       GITHUB_EVENT_NAME="pull_request", GITHUB_HEAD_REF=branch,
+                       GITHUB_BASE_REF="main", GITHUB_REF="refs/tags/detached")
+        calls = run(CHRONO_TOOL_CHANNEL=selector, **context)
+        assert not any(call[0] == "git" for call in calls)
+        assert versions() == {primary: expected, profile: expected}
+    run(CHRONO_TOOL_CHANNEL="stable", STABLE="1.1.0")
+    assert set(versions().values()) == {"1.1.0"}
+    run(CHRONO_TOOL_CHANNEL="v2.4.1", PREVIEW="9.0.0-alpha.2", STABLE="9.0.0")
+    assert set(versions().values()) == {"2.4.1"}
     before = receipt.read_bytes()
+    for invalid in ("", "all", "development", "v1;cmd", "v1.2", "v1.2.3\nbad"):
+        calls = run(1, CHRONO_TOOL_CHANNEL=invalid)
+        assert not any(c[0] == "curl" for c in calls)
+        assert receipt.read_bytes() == before
     for fault, status in (("api", 22), ("selection", 2), ("cache", 1), ("install", 9)):
         run(status, FAULT=fault)
         assert receipt.read_bytes() == before
-    run(1, TEST_BRANCH="")
-    run(1, TEST_BRANCH="", GITHUB_ACTIONS="true", GITHUB_SHA="different")
-    run(TEST_BRANCH="", GITHUB_ACTIONS="true", GITHUB_EVENT_NAME="pull_request",
-        GITHUB_SHA="fixed-checkout", GITHUB_HEAD_REF="integration/verify", GITHUB_BASE_REF="dev")
-    assert versions() == {"http:chrono-test-git": "1.2.3", "http:chrono-test-git-profile": "1.0.0-alpha.1"}
-    run(TEST_BRANCH="", CHRONO_INSTALL_BRANCH="main")
-    assert set(versions().values()) == {"1.0.0"}
     run(DISABLED='["http:chrono-test-git"]')
     assert set(versions()) == {"http:chrono-test-git-profile"}
     calls = run(DISABLED='["http:chrono-test-git","http:chrono-test-git-profile"]')
@@ -128,5 +165,6 @@ if __name__ == "__main__":
     command = Path(sys.argv[0]).name
     if command != "test_install.py":
         raise SystemExit(external(command, sys.argv[1:]))
-    with tempfile.TemporaryDirectory() as work:
-        exercise(Path(sys.argv[1]).resolve(), Path(work))
+    for host, pinned in ((sys.argv[1], False), (sys.argv[2], True)):
+        with tempfile.TemporaryDirectory() as work:
+            exercise(Path(host).resolve(), Path(work), pinned=pinned)

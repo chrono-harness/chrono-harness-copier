@@ -20,9 +20,11 @@ mise run harness-setup
 
 首次安装选择最新的正式版本。用 `--vcs-ref <tag>` 可以选择指定正式版或预览版。Copier 将选中的标签和本仓答案写入 `.chrono-harness/template-answers.yml`。
 
-采用独立工具的开发渠道时，在 Copier 答案中选 `tool_install_channels: dev`。每次运行 `mise run harness-setup`，安装器会为开发、feature 和 integration 分支的选装组织工具查询 GitHub Releases，核对两平台资产及当前平台的实际 SHA-256。普通分支（包括 main）使用模板固定配方。可在 `integration_tool_tags` 按完整 integration 分支名和工具命令指定精确标签。缺少目标发行、网络请求失败或校验错误时，安装命令失败。安装成功后，精确版本、URL 和 SHA-256 保存在该检出的 `.config/mise/conf.d/zz-chrono-harness-resolved.toml`。普通 `mise which` 和 `mise exec` 使用本地结果。Rust 和 Verus 使用配对的固定工具链。
+每个仓库可以独立选择各工具的发行版本。默认 `tool_install_channels: pinned` 读取宿主的 `.config/mise/conf.d/chrono-harness.toml` 固定配方。也可以把默认值设为 `stable`（最新公开正式版）、`preview`（最新公开测试版）或精确的 `v` 标签。按命令设置 `tool_versions` 可单独固定某个工具，例如 `{"chrono-pr":"v0.1.12-alpha.109"}`。Rust 和 Verus 使用配对的固定工具链。
 
-CI 调用 `sh .chrono-harness/install-tools.sh` 可只进行安装。检出 detached HEAD 时，GitHub Actions 可以使用与当前提交相符的 push 或 PR 上下文，其他部署须显式设置 `CHRONO_INSTALL_BRANCH`。本地安装需要 Git、mise、curl 和系统 SHA-256 命令。`pinned` 是默认策略。`all` 额外在 main 选择最新公开正式版本。
+临时试用测试版可运行 `CHRONO_TOOL_CHANNEL=preview mise run harness-setup`。该环境变量也接受 `stable` 或精确标签，如 `v0.1.0-alpha.3`，覆盖本次安装的所有已选组织工具。移除变量后再次运行安装，先采用每个工具的 `tool_versions`，其余工具采用 `tool_install_channels`。本地分支、标签和 detached HEAD 都遵循相同顺序。选择同一个精确标签时，每个启用的组织工具都须公开该标签及两平台资产。
+
+CI 使用 `sh .chrono-harness/install-tools.sh` 进行同样的安装。固定配方直接使用宿主登记的 URL 和 SHA-256。动态选择时，安装器读取 GitHub Releases，核对两平台资产和本机实际 SHA-256，通过后一次发布本检出的动态覆盖清单 `.config/mise/conf.d/zz-chrono-harness-resolved.toml`，供 `mise which` 和 `mise exec` 使用。遇到缺失发行、网络或校验错误，安装失败并保留上次成功结果。全部回到固定配方并安装成功时，安装器撤下此前的动态覆盖。
 
 安装时可填写本仓职责、源码位置和验证命令，模板会将它们直接写入根指南。每个仓库的 `AGENTS.md` 链接到本仓的 `CLAUDE.md`。默认生成的根文件包含首次安装、PR 与验证入口，以及 chrono-harness-instructions 发布的默认规则全文。克隆仓库即可阅读。工具的版本和校验值在本仓的 mise 清单中。
 

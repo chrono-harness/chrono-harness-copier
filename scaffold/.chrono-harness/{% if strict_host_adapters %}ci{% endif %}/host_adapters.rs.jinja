@@ -1,4 +1,4 @@
-{%- set install_command = 'mise install' if tool_install_channels == 'pinned' else 'sh .chrono-harness/install-tools.sh' -%}
+{%- set install_command = 'sh .chrono-harness/install-tools.sh' -%}
 //! These two adapters use the registered bootstrap table and release program.
 //! The shell reader checks the observed commands, platform cases and selected control dependencies.
 //! The release YAML reader supplies typed fields; Actions executes job dependencies.
@@ -150,18 +150,17 @@ mod native {
         let Ok(doc) = source.parse::<toml::Table>() else {
             return false;
         };
-{% if tool_install_channels == 'pinned' %}        let Some(tools) = doc.get("tools").and_then(toml::Value::as_table) else {
-            return false;
-        };
-{% endif %}        let Some(setup) = doc
+        let instruction_tool = doc.get("tools").and_then(toml::Value::as_table)
+            .is_some_and(|tools| tools.contains_key("http:chrono-instructions"));
+        let Some(setup) = doc
             .get("tasks")
             .and_then(|tasks| tasks.get("harness-setup"))
             .and_then(toml::Value::as_table)
         else {
             return false;
         };
-        if {% if tool_install_channels == 'pinned' %}tools.contains_key("http:chrono-instructions") != instructions
-            || {% endif %}setup.keys().any(|key| key != "run" && key != "description")
+        if instruction_tool != instructions
+            || setup.keys().any(|key| key != "run" && key != "description")
         {
             return false;
         }
