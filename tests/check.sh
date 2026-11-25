@@ -23,6 +23,14 @@ for kind in copier binary; do
 done
 # A host can keep roadmap automation while opting out of every locally installed tool.
 test ! -e "$stage/copier/.config/mise/conf.d/chrono-harness.toml"
+test ! -e "$stage/default/.chrono-harness/ci/host_adapters.rs"
+uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
+  -d repository=sample/strict-example \
+  -d 'strict_host_adapters={"binary":"chrono-example","verus_macro_crate":"chrono_example","ci_tools":["chrono-harness","verus"]}' \
+  . "$stage/strict"
+grep -Fq 'use chrono_example::verus;' "$stage/strict/.chrono-harness/ci/host_adapters.rs"
+grep -Fq 'set -- chrono-harness verus' "$stage/strict/.chrono-harness/ci/host_adapters.rs"
+grep -Fq '$RUNNER_TEMP/example-mise.XXXXXXXX' "$stage/strict/.chrono-harness/ci/host_adapters.rs"
 cmp .github/roadmap.cjs "$stage/copier/.github/roadmap.cjs"
 cmp .github/workflows/issue-roadmap.yml "$stage/copier/.github/workflows/issue-roadmap.yml"
 cmp .github/workflows/release.yml "$stage/copier/.github/workflows/release.yml"

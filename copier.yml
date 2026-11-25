@@ -46,6 +46,25 @@ project_guide:
   multiline: true
   default: ""
   help: 本仓职责、源码位置和验证入口（可选，可直接在根指南追加）。
+strict_host_adapters:
+  type: yaml
+  default: {}
+  help: 可选的严格 Rust 宿主安装与发布入口登记，填写本仓 bootstrap 程序名、CI 工具清单和测试 crate 的 Verus 宏来源。
+  validator: |
+    {%- if strict_host_adapters -%}
+    {%- set a = strict_host_adapters -%}
+    {%- if a is not mapping or a.keys() | sort != ['binary', 'ci_tools', 'verus_macro_crate']
+        or not (a.binary is string and a.binary | regex_search('^[a-z][a-z0-9-]*$'))
+        or not (a.verus_macro_crate is string and a.verus_macro_crate | regex_search('^[a-z][a-z0-9_]*$'))
+        or a.ci_tools is string or not (a.ci_tools is sequence and a.ci_tools | length)
+        or a.ci_tools | unique | list | length != a.ci_tools | length -%}
+    严格宿主需要 binary、ci_tools、verus_macro_crate 三个有效字段
+    {%- else -%}
+    {%- for tool in a.ci_tools if not (tool is string and tool | regex_search('^[a-z][a-z0-9-]*$')) -%}
+    CI 工具名只接受小写字母、数字和连字符
+    {%- endfor -%}
+    {%- endif -%}
+    {%- endif -%}
 generate_check:
   type: bool
   default: false
