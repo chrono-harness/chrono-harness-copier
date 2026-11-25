@@ -1,0 +1,41 @@
+{%- set selection = namespace(tools=['chrono-harness'] if local_check_retention else []) -%}
+{%- if native_check_keep_seconds -%}
+  {%- set selection.tools = selection.tools + ['chrono-host-bootstrap'] -%}
+{%- endif -%}
+{%- for feature in features -%}
+  {%- set selection.tools = selection.tools + tool_dependencies[feature] -%}
+{%- endfor -%}
+{%- set selected_tools = selection.tools | unique | list -%}
+{%- set catalog = {
+    'chrono-cache': ('chrono-harness/chrono-harness-cache', '0.1.0-alpha.3', '6757e22475c29f904cb10652e143d2ac4fe2ddb2911a4458bdf4d5de79090e5e', '2b71746930f337d7ae528c29d40f4ce80ce20eed38e534423ffba5fb14ddad19'),
+    'chrono-ci': ('chrono-harness/chrono-harness-ci', '0.1.0-alpha.5', '5bce03f8f201743598c3a453c3660cd89d19e8c8b31661240ea58a02ac480fe5', '869c4351395440a855cade9f7cae662e95656611f04e261e24f4ed997b47b71d'),
+    'chrono-diagnostics': ('chrono-harness/chrono-harness-diagnostics', '0.1.0-alpha.7', '993c6904b9309d8caf948c01e92022356119771ecede68f770f81f50ff77b157', '5e4ebb302fc8179f3c559bb0b07a140e4f851e75c26401930ebadd6a588bbf00'),
+    'chrono-distribution': ('chrono-harness/chrono-harness-distribution', '0.1.0-alpha.3', '3c4c4b1b81f95b6c2788b1e4ebb15020fa370dda475e627b24ce8f852a7f3ee7', '03a13fb8a30b3c9b760c370e15545f29a84ba7b48b67b6aab2096821c83e5c92'),
+    'chrono-harness': ('chrono-harness/chrono-harness-runner', '0.1.0-alpha.32', '23233153baaebd0a3eba98e50f6ba96e68893bc0e6a637952cc4b38c5d737453', 'dd52d06fe3fd46605e417037fe9cb547a53b13c98f2ffeef0e4441eba5d439c8'),
+    'chrono-host-bootstrap': ('chrono-harness/chrono-harness-host-bootstrap', '0.1.0-alpha.16', '5461c979261f2bd90f079b1a1158d1396489505871b40ca7c93aa5f243211f96', '73fcc764863bd12aae792404b8c963866fde240d5abd5ab17847d3aaf95ff313'),
+    'chrono-host-release': ('chrono-harness/chrono-harness-host-release', host_release_artifact.version, host_release_artifact.linux_sha256, host_release_artifact.macos_sha256),
+    'chrono-inputs': ('chrono-harness/chrono-harness-inputs', '0.1.0-alpha.7', 'b469969f79c30701204d12cc03d340e075d4c919ee332f4e0ec2847a0d57fc79', '5bd3d64d33aaaa7f24228b6c6c7244beeb28a6390a5a8ec16ff63e34b1857901'),
+    'chrono-instructions': ('chrono-harness/chrono-harness-instructions', '0.1.0-alpha.7', '54a38473def750c39f508c0595298082ff0fc410f5a3dca87ebda76ee7589598', 'ad1b0b4cfb4d9052fc2057ea27bff5bf1b7734a1d66a99f5cbbbf86e8b396424'),
+    'chrono-judge-ci': ('chrono-harness/chrono-harness-judge-ci', '0.1.0-alpha.21', '456f90b5f3158e810548c160f2d6d1ba39967472104cc2aa02f018fdbe139caf', '6c15efe19a3c342dd95c7045b47e37d9f0a92e7e0848fa3e01fc394b0bdf259d'),
+    'chrono-judge-cost': ('chrono-harness/chrono-harness-judge-cost', '0.1.0-alpha.3', 'a972b9e0701a1a1d309cbc8160f99eadd02b856900a1833393d44eba86c27867', 'e67d06de0bde1a2f0ff8efeb2c7d20679cad4271204779a169cd3d6832e38c54'),
+    'chrono-judge-filemap': ('chrono-harness/chrono-harness-judge-filemap', '0.1.0-alpha.11', '60efb81801a3a39ae04c504135c13d3bdb4e922857ba2570033dce0a304949e3', 'd2aa224982116fe2e63c131bb6447d9e6d13c6b0adcfd9efb9286da1ca02dcc7'),
+    'chrono-judge-mixed': ('chrono-harness/chrono-harness-judge-mixed', '0.1.0-alpha.4', 'e8ffde928c95449ecc40895a2a2351a155dfa3e1b1a9e100f7ac0434c3e17a16', 'eb954acc68f15b923bf1294a205c9c288b8bdd24d32fc0cd83db30aad7d87b1a'),
+    'chrono-judge-projects': ('chrono-harness/chrono-harness-judge-projects', '0.1.0-alpha.12', '7653fdf2af2b62b4062928b566a07e6df5a8c747b8248746a485f4cae78b1074', 'e5620d9bc9c8b56ff572c5fbce2586becf6290c309af0bdfad408dab01914209'),
+    'chrono-judge-registration': ('chrono-harness/chrono-harness-judge-registration', '0.1.0-alpha.27', '98d97a6d7dc0fbe7ecbb15e6319a149f015e25f4dee30e1343826216492060fd', '40a59814f7176f518f1eb0a11c12a2f5c75eb7162810ff891d2865096d9dc73b'),
+    'chrono-judge-routes': ('chrono-harness/chrono-harness-judge-routes', '0.1.0-alpha.21', 'b94fccec431961742a25cbf87ea2a970ea9946b886e27a8c5c66db4929848407', '21875c39fdd35279a1df6659f41dd4c11ae2bb406afcda22dc75511c5f27394b'),
+    'chrono-judge-workflow': ('chrono-harness/chrono-harness-judge-workflow', '0.1.0-alpha.6', '177258e7252acd600522bc7b32063184630a88cdced72147dccf4ceba8347ff5', '2fc5aacd1334503405823d0ff3beda65117c41d07fe3639738daee51bbb358e3'),
+    'chrono-pr': ('chrono-harness/chrono-harness-pr', '0.1.7', '45db6500979c57d1291f9d47d3116f40cbe75c9e1f0b7748d5caf7d42e508c29', 'c26612e41a4cecbc1447089201e913ee7541ea35f87c525edd6a68252f5872b5'),
+    'chrono-test-git': ('chrono-harness/chrono-harness-test-git', '0.1.0-alpha.2', '85a0b3491bf6fff74d8d7a5eea06203855707a234c6320abbaeb265c46def353', '5129b7ac91bdfa47a6b38f524b19aecdd37c69e43b5c9080ad29f16ab649d1ae'),
+    'chrono-test-git-profile': ('chrono-harness/chrono-harness-test-git', '0.1.0-alpha.2', '9bc04372005be2f001a80ec5bc5f49ebf10d90a45a44f2bea8294fd2c29973e8', '6284a14776a07e1f8e5a65ab7d95cdf3134bd1374c0c8a13ade3c5638ad054a8'),
+    'chrono-worktree': ('chrono-harness/chrono-harness-worktree', '0.1.0-alpha.10', 'ee7280875d36161c1b701970c5edf7ccc96ef33e1592416944033b14755619d9', '35fd1ffd55431916a1c123215b3cee09e7e65df24e1110b4142c3581c20c8d8e'),
+} -%}
+{%- macro pins() -%}
+{% for command, record in catalog.items() if command in selected_tools %}
+[tools."http:{{ command }}"]
+version = "{{ record[1] }}"
+bin = "{{ command }}"
+[tools."http:{{ command }}".platforms]
+linux-x64 = { url = "https://github.com/{{ record[0] }}/releases/download/v{{ record[1] }}/{{ command }}-linux-x86_64", checksum = "sha256:{{ record[2] }}" }
+macos-arm64 = { url = "https://github.com/{{ record[0] }}/releases/download/v{{ record[1] }}/{{ command }}-macos-aarch64", checksum = "sha256:{{ record[3] }}" }
+{% endfor %}
+{%- endmacro -%}
