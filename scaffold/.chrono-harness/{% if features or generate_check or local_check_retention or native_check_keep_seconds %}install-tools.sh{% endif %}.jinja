@@ -16,16 +16,6 @@ if [ "${CHRONO_TOOL_CHANNEL+x}" = x ]; then
                fail 'CHRONO_TOOL_CHANNEL expects stable, preview or an exact v tag.' ;;
     esac
 fi
-select_tool() {
-    selector=${CHRONO_TOOL_CHANNEL:-}
-    [ -z "$selector" ] || return 0
-    case "$1" in
-{% for command, tag in tool_versions.items() %}
-        {{ command }}) selector='{{ tag }}' ;;
-{% endfor %}
-        *) selector='{{ tool_install_channels }}' ;;
-    esac
-}
 case "$(uname -s)-$(uname -m)" in
     Linux-x86_64) platform=linux-x64; asset=linux-x86_64; seed_sha={{ install_resolver_artifact.linux_sha256 }} ;;
     Darwin-arm64) platform=macos-arm64; asset=macos-aarch64; seed_sha={{ install_resolver_artifact.macos_sha256 }} ;;
@@ -60,10 +50,7 @@ validate_target() {
 validate_target
 export MISE_IGNORED_CONFIG_PATHS="${MISE_IGNORED_CONFIG_PATHS:+$MISE_IGNORED_CONFIG_PATHS:}$resolved"
 export MISE_TRUSTED_CONFIG_PATHS="$work${MISE_TRUSTED_CONFIG_PATHS:+:$MISE_TRUSTED_CONFIG_PATHS}"
-while read -r command repository; do
-    enabled "$command" || continue
-    select_tool "$command"
-    [ "$selector" != pinned ] || continue
+resolve_dynamic() {
     if [ -z "$downloads" ]; then
         temp_parent=$(cd "${TMPDIR:-/tmp}" && pwd -P)
         case "$temp_parent/" in "$(pwd -P)/"*) temp_parent=/tmp ;; esac
@@ -85,7 +72,9 @@ while read -r command repository; do
                 auth="Authorization: Bearer $GITHUB_TOKEN"
                 set -- "$@" -H @-
             fi
-            if curl "$@" -D "$pages/headers" -o "$pages/$page.json" \
+            # Fixed-width names preserve GitHub's order when the resolver receives the glob.
+            file=$(printf '%020d' "$page")
+            if curl "$@" -D "$pages/$file.headers" -o "$pages/$file.json" \
                 "https://api.github.com/repos/$repository/releases?per_page=100&page=$page" <<AUTH
 $auth
 AUTH
@@ -95,40 +84,46 @@ AUTH
                 echo "Failed to read releases for $repository (page $page)." >&2
                 exit "$fetch_status"
             fi
-            # Fetch the next numbered page only when GitHub advertises it.
-            if grep -i '^link:' "$pages/headers" | grep -Fq 'rel="next"'; then page=$((page + 1))
-            else break; fi
+            state=$("$seed" resolve-install-v1 --page-state "$pages/$file.headers")
+            case "$state" in
+                next) page=$((page + 1)) ;;
+                done) break ;;
+                *) fail "Unexpected release page state: $state" ;;
+            esac
         done
     fi
     "$seed" resolve-install-v1 --mise-tool "$command" "$repository" "$selector" \
         "$command-linux-x86_64" "$command-macos-aarch64" "$pages"/*.json >> "$manifest"
+}
+# Resolve each enabled command once, then install and verify that exact selection.
+set --
+: > "$work/checksums"
+while read -r command repository default_selector; do
+    enabled "$command" || continue
+    selector=${CHRONO_TOOL_CHANNEL-$default_selector}
+    if [ "$selector" = pinned ]; then
+        source=$config_dir/chrono-harness.toml
+    else
+        resolve_dynamic
+        source=$manifest
+    fi
+    version=$(mise config get --file "$source" "tools.\"http:$command\".version")
+    expected=$(mise config get --file "$source" "tools.\"http:$command\".platforms.$platform.checksum")
+    set -- "$@" "http:$command@$version"
+    printf '%s %s\n' "$command" "$expected" >> "$work/checksums"
 done <<'TOOLS'
 {% for command in commands -%}
-{{ command }} {{ tools.catalog[command][0] }}
+{{ command }} {{ tools.catalog[command][0] }} {{ tool_versions.get(command, tool_install_channels) }}
 {% endfor -%}
 TOOLS
 # An explicit mise argument installs the requested release even when a matching prerelease is cached.
-set --
-for command in {{ commands | join(' ') }}; do
-    enabled "$command" || continue
-    select_tool "$command"
-    source=$manifest
-    if [ "$selector" = pinned ]; then source=$config_dir/chrono-harness.toml; fi
-    version=$(mise config get --file "$source" "tools.\"http:$command\".version")
-    set -- "$@" "http:$command@$version"
-done
 if [ "$#" -gt 0 ]; then mise -C "$work" install "$@"; fi
 # Install remaining host tools, including Rust and Verus where selected.
 mise -C "$work" install
-for command in {{ commands | join(' ') }}; do
-    enabled "$command" || continue
-    select_tool "$command"
-    source=$manifest
-    if [ "$selector" = pinned ]; then source=$config_dir/chrono-harness.toml; fi
-    expected=$(mise config get --file "$source" "tools.\"http:$command\".platforms.$platform.checksum")
+while read -r command expected; do
     executable=$(mise -C "$work" which "$command")
     verify "$executable" "${expected#sha256:}"
-done
+done < "$work/checksums"
 validate_target
 if [ -s "$manifest" ]; then
     mv -f "$manifest" "$resolved"
