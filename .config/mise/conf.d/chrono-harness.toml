@@ -188,3 +188,13 @@ run = "chrono-host-bootstrap native-scratch maintain 86400"
 description = "Install this repository's selected tools"
 run = ["mise install", "mise exec -- chrono-instructions sync-rules --host-root ."]
 
+
+[tasks.refresh-template-rules]
+description = "Refresh the offline guide data from the pinned instructions release"
+run = """
+set -eu
+snapshot=$(mktemp .chrono-harness/.published-rules.XXXXXXXX)
+trap 'rm -f "$snapshot"' EXIT
+chrono-instructions publish-rules > "$snapshot"
+mv -f "$snapshot" .chrono-harness/published-rules.json
+"""

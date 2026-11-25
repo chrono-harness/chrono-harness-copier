@@ -26,7 +26,7 @@ CI 调用 `sh .chrono-harness/install-tools.sh` 可只进行安装。检出 deta
 
 安装时可填写本仓职责、源码位置和验证命令，模板会将它们直接写入根指南。每个仓库的 `AGENTS.md` 链接到本仓的 `CLAUDE.md`。默认生成的根文件包含首次安装、PR 与验证入口，以及 chrono-harness-instructions 发布的默认规则全文。克隆仓库即可阅读。工具的版本和校验值在本仓的 mise 清单中。
 
-模板安装的 `.chrono-harness/rules.json` 默认为 `{"mode":"all"}`，省略该文件同样接受全部当前和以后新增的规则。每次开始任务时，运行 `mise run harness-setup`。选装 instructions 的仓库会用本仓固定版本的 `chrono-instructions sync-rules --host-root .` 读取上游已发布的规则，按本仓选择更新根指南。成功后重新阅读指南。仓库自己的职责、源码位置和检查入口放在生成块之外。同步失败会保留原指南。
+模板安装的 `.chrono-harness/rules.json` 默认为 `{"mode":"all"}`，省略该文件同样接受全部当前和以后新增的规则。选装 instructions 的仓库用 `mise run harness-setup` 从上游刷新本仓选择的规则。仓库自己的职责、源码位置和检查入口放在生成块之外。同步失败会保留原指南。
 
 | 需求 | 配置 |
 | --- | --- |
@@ -103,6 +103,8 @@ Copier 源码产品可选 `version_policy: next_patch`。新提交在最高已�
 ## 开发模板
 
 模板选项在 `copier.yml`，写入宿主的文件在 `scaffold/`。修改模板后，从仓库根目录运行 `./tests/check.sh`。
+
+Copier 首次渲染从模板内的 `.chrono-harness/published-rules.json` 读取发布数据。更新本仓固定的 chrono-instructions 后，运行 `mise run refresh-template-rules` 从该发行的 `publish-rules` 输出刷新快照，并通过本仓自检核对首份指南。下载模板后，本地首次生成可以离线进行。
 
 本仓自检将渲染副本交给比较和更新检查。在 Git 关联工作树中，副本位于工作树的 `copier-renders/`。托管工作树的宿主把该业务目录登记为可回收，独立维护任务回收到期工作树时一起清除中断遗留的副本。GitHub Actions 使用作业的 `RUNNER_TEMP`。源码归档及重定向的渲染目录使用 `TMPDIR`（缺省 `/tmp`），由临时目录持有者维护。
 
