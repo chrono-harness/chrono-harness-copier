@@ -45,7 +45,12 @@ verify() {
 }
 config_dir=$PWD/.config/mise/conf.d
 work=$(mktemp -d "$config_dir/.chrono-install.XXXXXXXX")
-trap 'rm -rf -- "$work"' EXIT
+downloads=
+cleanup() {
+    rm -rf -- "$work"
+    if [ -n "$downloads" ]; then rm -rf -- "$downloads"; fi
+}
+trap cleanup EXIT
 trap 'exit 1' HUP INT TERM
 manifest=$work/mise.toml
 : > "$manifest"
@@ -61,27 +66,33 @@ if [ "$channel" = pinned ]; then
     cp .chrono-harness/pinned-tools.toml "$manifest"
 else
 {%- endif %}
-    seed=$work/chrono-host-release
     while read -r command repository; do
         enabled "$command" || continue
-        if [ ! -x "$seed" ]; then
+        if [ -z "$downloads" ]; then
+            temp_parent=$(cd "${TMPDIR:-/tmp}" && pwd -P)
+            case "$temp_parent/" in "$(pwd -P)/"*) temp_parent=/tmp ;; esac
+            downloads=$(mktemp -d "$temp_parent/chrono-install.XXXXXXXX")
+            seed=$downloads/chrono-host-release
             curl --disable --proto '=https' --proto-redir '=https' --fail --silent --show-error --location \
                 "https://github.com/chrono-harness/chrono-harness-host-release/releases/download/v{{ install_resolver_artifact.version }}/chrono-host-release-$asset" -o "$seed"
             verify "$seed" "$seed_sha"
             chmod 700 "$seed"
         fi
-        pages=$work/${repository#*/}
+        pages=$downloads/${repository#*/}
         if [ ! -d "$pages" ]; then
             mkdir "$pages"
             page=1
             while :; do
                 set -- --disable --proto '=https' --fail --silent --show-error
+                auth=
                 if [ -n "${GITHUB_TOKEN:-}" ]; then
-                    printf 'Authorization: Bearer %s\n' "$GITHUB_TOKEN" > "$work/api-header"
-                    set -- "$@" -H "@$work/api-header"
+                    auth="Authorization: Bearer $GITHUB_TOKEN"
+                    set -- "$@" -H @-
                 fi
                 curl "$@" -D "$pages/headers" -o "$pages/$page.json" \
-                    "https://api.github.com/repos/$repository/releases?per_page=100&page=$page"
+                    "https://api.github.com/repos/$repository/releases?per_page=100&page=$page" <<AUTH
+$auth
+AUTH
                 # Fetch the next numbered page only when GitHub advertises it.
                 if grep -i '^link:' "$pages/headers" | grep -Fq 'rel="next"'; then page=$((page + 1))
                 else break; fi

@@ -32,6 +32,7 @@ def external(name, args):
         if "-D" not in args:
             shutil.copyfile(state / "mock", output)
         else:
+            assert not output.is_relative_to(Path.cwd())
             assert args[-1].startswith("https://api.github.com/repos/chrono-harness/chrono-harness-test-git/releases?")
             if os.environ.get("FAULT") == "api":
                 return 22
