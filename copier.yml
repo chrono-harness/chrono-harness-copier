@@ -18,9 +18,9 @@ install_resolver_artifact:
   type: yaml
   when: false
   default:
-    version: "0.1.0-alpha.29"
-    linux_sha256: "271e79ab48a9c7442c8edc1d404e44430711ac486893240246f754255839b785"
-    macos_sha256: "7a7ac849578b7d53b98baaa7396b4273a97c9a4a9eb4998607681fb769f1a692"
+    version: "0.1.1-alpha.1"
+    linux_sha256: "644b4b574f17af4e7cc1194f107ad2da5556b91965ef359ce0920496b4f24219"
+    macos_sha256: "62212e36b25f2ce0a97e93ab8a62912f7f6e4c6cc24fe324994843f5aff090c3"
 tool_dependencies:
   type: yaml
   when: false
