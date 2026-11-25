@@ -35,6 +35,8 @@ mise run harness-setup
 
 本地 scoped 检查会登记供单元报告和汇总读取的原件。采用 runner 维护的宿主可选 `local_check_retention: true`，使用 `mise run harness-setup` 安装 runner 并初始化缺失的 24 小时策略，维护入口为 `mise run harness-maintain-checks`。将初始化的策略提交到宿主仓库。已有 `.chrono-harness/retention.json` 的宿主保留自己的窗口和生产者。使用 worktree 或其他专属维护入口的宿主继续使用原入口。生成的 `.chrono-harness/USAGE.md` 说明按小时调度、报告引用和窗口内转存。只下载工具或只输出 stdout 的检查可以关闭这个选项。
 
+若本仓的原生检查使用 `chrono-host-bootstrap native-scratch run`，在模板答案里设置 `native_check_keep_seconds: 86400`，将该编译目录的时限设为一天。模板会安装负责目录的工具，纳入同一个 `mise run harness-maintain-checks` 定时任务。只需原生目录维护的宿主也可单独启用。默认值 0 表示关闭。
+
 要在保留窗口结束后释放最后一次成功的本地完整检查报告，在 `expire_local_check_slots` 数组中填写本仓检查登记中的固定报告路径，例如 `[".chrono-harness/state/collection/check.json"]`。默认数组为空。每条路径只填一次。CI 上传、发布交接和失败诊断所需的报告由相应消费者管理。
 
 选择生成业务检查时，填写项目现有的检查命令和运行平台。本地与 GitHub Actions 都会执行 `mise run harness-check`。已有登记式检查的项目可以沿用自己的工作流。

@@ -9,7 +9,7 @@
 
 {% endif %}
 日常开发和 PR 使用 `{{ dev_branch }}`，正式版本从 `main` 发布。
-{% if features or generate_check or local_check_retention %}
+{% if features or generate_check or local_check_retention or native_check_keep_seconds %}
 首次检出时，在仓库根目录安装本仓选定的工具。
 
 ```sh

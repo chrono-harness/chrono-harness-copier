@@ -69,6 +69,11 @@ local_check_retention:
   type: bool
   default: false
   help: 本地检查会向 runner 登记原件，并需要使用 runner 维护它们吗？已有专属维护入口的宿主可以继续沿用。
+native_check_keep_seconds:
+  type: int
+  default: 0
+  help: 原生开发检查的临时编译目录保留多少秒？0 关闭，86400 为一天。宿主通过 host-bootstrap 的 native-scratch run 运行原生检查。
+  validator: "{{ '原生检查目录保留秒数必须在 0 到 18446744073709551615 之间' if native_check_keep_seconds < 0 or native_check_keep_seconds > 18446744073709551615 else '' }}"
 expire_local_check_slots:
   when: "{{ local_check_retention }}"
   type: json
