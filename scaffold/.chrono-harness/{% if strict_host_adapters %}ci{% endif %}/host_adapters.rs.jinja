@@ -137,10 +137,12 @@ mod native {
     fn deployed_tool_installer_matches_the_selected_template() {
         use sha2::{Digest, Sha256};
         let digest = format!("{:x}", Sha256::digest(deployed_tool_installer().as_bytes()));
-        assert!(installer_digest_matches(&digest), "install-tools.sh differs from the selected template");
+        assert!(
+            installer_digest_matches(&digest),
+            "install-tools.sh differs from the selected template"
+        );
     }
-{% endif %}
-{% if selected_commands %}
+{% endif %}{% if selected_commands %}
     fn when_selected(condition: &str, installed: &str, pinned: &str) -> String {
         format!("{% raw %}{{% if {condition} %}}{installed}{{% else %}}{pinned}{{% endif %}}{% endraw %}")
     }
@@ -235,8 +237,7 @@ mod native {
             }
         }
     }
-{% endif %}
-{% if manage_roadmap %}
+{% endif %}{% if manage_roadmap %}
     #[test]
     fn deployed_roadmap_matches_the_selected_template() {
         use sha2::{Digest, Sha256};
@@ -252,8 +253,8 @@ mod native {
         assert!(!roadmap_matches(&script_hash, &script_hash));
     }
 {% endif %}
-
-{% if verify_ci %}    fn text<'a>(node: tree_sitter::Node<'_>, source: &'a str) -> &'a str {
+{% if verify_ci %}
+    fn text<'a>(node: tree_sitter::Node<'_>, source: &'a str) -> &'a str {
         node.utf8_text(source.as_bytes()).unwrap()
     }
 
@@ -341,7 +342,9 @@ mod native {
         let Ok(doc) = source.parse::<toml::Table>() else {
             return false;
         };
-        let instruction_tool = doc.get("tools").and_then(toml::Value::as_table)
+        let instruction_tool = doc
+            .get("tools")
+            .and_then(toml::Value::as_table)
             .is_some_and(|tools| tools.contains_key("http:chrono-instructions"));
         let Some(setup) = doc
             .get("tasks")
@@ -378,7 +381,10 @@ mod native {
         let selected = {{ "true" if "instructions" in features else "false" }};
         assert!(setup_matches(original, selected));
         assert!(!setup_matches(
-            &original.replace("{{ install_command }}", "{{ install_command }} --dry-run"),
+            &original.replace(
+                "{{ install_command }}",
+                "{{ install_command }} --dry-run"
+            ),
             selected
         ));
         assert!(!setup_matches(
@@ -388,7 +394,8 @@ mod native {
             ),
             selected
         ));
-        let install_only = "[tools]\n[tasks.harness-setup]\nrun = '{{ install_command }}'";
+        let install_only =
+            "[tools]\n[tasks.harness-setup]\nrun = '{{ install_command }}'";
         assert!(setup_matches(install_only, false));
         assert!(!setup_matches(install_only, true));
         let reverse = "[tools.'http:chrono-instructions']\n[tasks.harness-setup]\nrun=['mise exec -- chrono-instructions sync-rules --host-root .','{{ install_command }}']";
@@ -396,8 +403,8 @@ mod native {
         let extra = "[tools]\n[tasks.harness-setup]\nrun = ['{{ install_command }}', 'another-command']";
         assert!(!setup_matches(extra, false));
     }
-
-{% endif %}{% if verify_ci %}    fn bootstrap_matches(src: &str) -> bool {
+{% endif %}{% if verify_ci %}
+    fn bootstrap_matches(src: &str) -> bool {
         let Some(tree) = shell_tree(src) else {
             return false;
         };
