@@ -3,6 +3,8 @@
 {%- set install_command = 'sh .chrono-harness/install-tools.sh' -%}
 {%- set locked_roadmap = manage_roadmap and roadmap_actions_lock | default(false) -%}
 {%- set verify_ci = strict_host_adapters.ci_tools is defined -%}
+{%- set basic_setup_length = 2 if local_check_retention else 1 -%}
+{%- set retention_setup_command = 'sh .chrono-harness/setup-check-retention.sh' -%}
 {%- set has_installer = features or generate_check or local_check_retention or native_check_keep_seconds -%}
 //! Deployment checks for the files selected by this host.
 #![allow(unexpected_cfgs)]
@@ -45,13 +47,15 @@ pub fn requires_success(needs_id: &String, predecessor: &String, explicit_if: bo
 {% endif -%}
 {% if features or generate_check %}/// A mise setup installs tools first and refreshes the rules only when selected.
 pub fn setup_sequence(commands: &[String], instructions: bool) -> (accepted: bool)
-    ensures accepted == (commands.len() == (if instructions { 2usize } else { 1usize })
+    ensures accepted == (commands.len() == (if instructions { {{ basic_setup_length + 1 }}usize } else { {{ basic_setup_length }}usize })
         && commands@[0]@ == "{{ install_command }}"@
-        && (!instructions || commands@[1]@ == "mise exec -- chrono-instructions sync-rules --host-root ."@)),
+        && (!instructions || commands@[1]@ == "mise exec -- chrono-instructions sync-rules --host-root ."@){% if local_check_retention %}
+        && commands@[commands@.len() - 1]@ == "{{ retention_setup_command }}"@{% endif %}),
 {
-    if commands.len() != (if instructions { 2usize } else { 1usize }) { return false; }
+    if commands.len() != (if instructions { {{ basic_setup_length + 1 }}usize } else { {{ basic_setup_length }}usize }) { return false; }
     commands[0] == "{{ install_command }}".to_string() && (!instructions
-        || commands[1] == "mise exec -- chrono-instructions sync-rules --host-root .".to_string())
+        || commands[1] == "mise exec -- chrono-instructions sync-rules --host-root .".to_string()){% if local_check_retention %}
+        && commands[commands.len() - 1] == "{{ retention_setup_command }}".to_string(){% endif %}
 }
 
 pub fn mise_manifest() -> (s: &'static str) {
@@ -521,8 +525,12 @@ mod native {
             ),
             selected
         ));
+{% if local_check_retention %}        assert!(!setup_matches(&original.replace("{{ retention_setup_command }}", "true"), selected));
         let install_only =
+            "[tools]\n[tasks.harness-setup]\nrun = ['{{ install_command }}', '{{ retention_setup_command }}']";
+{% else %}        let install_only =
             "[tools]\n[tasks.harness-setup]\nrun = '{{ install_command }}'";
+{% endif -%}
         assert!(setup_matches(install_only, false));
         assert!(!setup_matches(install_only, true));
         let reverse = "[tools.'http:chrono-instructions']\n[tasks.harness-setup]\nrun=['mise exec -- chrono-instructions sync-rules --host-root .','{{ install_command }}']";
