@@ -73,14 +73,22 @@ uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
   -d repository=sample/strict-example \
   -d 'strict_host_adapters={"binary":"chrono-example","verus_macro_crate":"chrono_example","ci_tools":["chrono-harness","verus"]}' \
   . "$stage/strict"
+for program in .github/roadmap.cjs .github/workflows/issue-roadmap.yml; do
+  digest=$(shasum -a 256 "$stage/strict/$program" | cut -d ' ' -f 1)
+  grep -Fq "$digest" "$stage/strict/.chrono-harness/ci/host_adapters.rs"
+done
 grep -Fq 'use chrono_example::verus;' "$stage/strict/.chrono-harness/ci/host_adapters.rs"
 grep -Fq 'set -- chrono-harness verus' "$stage/strict/.chrono-harness/ci/host_adapters.rs"
 grep -Fq '$RUNNER_TEMP/example-mise.XXXXXXXX' "$stage/strict/.chrono-harness/ci/host_adapters.rs"
 grep -Fq 'let selected = true;' "$stage/strict/.chrono-harness/ci/host_adapters.rs"
 uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
-  -d 'features=["cache"]' \
+  -d 'features=["cache"]' -d manage_roadmap=false \
   -d 'strict_host_adapters={"binary":"chrono-example","verus_macro_crate":"chrono_example","ci_tools":["verus"]}' \
   . "$stage/strict-without-instructions"
+if grep -Fq 'fn deployed_roadmap' "$stage/strict-without-instructions/.chrono-harness/ci/host_adapters.rs"; then
+  echo "Strict adapter references an unselected roadmap" >&2
+  exit 1
+fi
 grep -Fq 'let selected = false;' "$stage/strict-without-instructions/.chrono-harness/ci/host_adapters.rs"
 cmp .github/roadmap.cjs "$stage/copier/.github/roadmap.cjs"
 cmp .github/workflows/issue-roadmap.yml "$stage/copier/.github/workflows/issue-roadmap.yml"

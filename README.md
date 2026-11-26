@@ -123,4 +123,6 @@ Copier 首次渲染从模板内的 `.chrono-harness/published-rules.json` 读取
 
 选装严格检查且生成 mise 清单时，同一验证根读取宿主真实 TOML。请将该清单登记为 program，指向该根。setup 验收检查本仓工具选择、安装与刷新指令的顺序。工具发行标签与摘要由宿主安装流程验证。
 
+同时启用严格适配器和路线图时，将 `.github/roadmap.cjs`、`.github/workflows/issue-roadmap.yml` 登记为 program，连接同一验证根与原生测试，并在测试项目添加 dev-dependency `sha2 = "0.10"`。两个文件都进入实际编译。Copier 按所选回答渲染两份内容并生成 SHA-256。原生测试对两个部署文件计算摘要，同源 Verus 判法要求两项分别相等。更改发布者或校验资产时重新渲染。此检查依赖 Copier 的渲染和 SHA-256 的内容绑定，路线图业务判法及外部 GitHub 行为的验收分别见 host-release 与本仓路线图测试。
+
 普通长期主检出使用本仓已选装的 host-bootstrap 在 `target/native-checks/` 内建立一次检查的私有目录。成功后立即释放，失败或强制中断的材料留给调试与转存。开发者可在窗口内复制到独立存储。本仓的 `mise run harness-maintain-checks` 执行一轮回收，处理超过 24 小时且使用方已退出的检查目录。只有实际执行这一轮后才能核对删除结果。
