@@ -132,8 +132,8 @@ pub fn roadmap_repository(checkout: bool, owner_id: u64, repo_id: u64) -> (accep
 {
     owner_id == 44036562 && repo_id == (if checkout { 197814629 } else { 205262760 })
 }
-{% endif %}
-/// The host-selected template binds the script and workflow structure.
+{% endif -%}
+/// The native caller hashes the actual UTF-8 bytes embedded above.
 pub fn roadmap_matches(script: &String, workflow: &String) -> (accepted: bool)
     ensures accepted == (script@ == "{{ script_hash }}"@ && workflow@ == "{{ workflow_hash }}"@),
 {
@@ -275,12 +275,23 @@ mod native {
             let entry = lock["dependencies"].get(name)?;
             let sha = entry["commit"].as_str()?.strip_prefix("sha1-")?;
             if reference.is_empty()
-                || !reference.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b'/'))
+                || !reference
+                    .bytes()
+                    .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b'/'))
                 || entry["ref"].as_str() != Some(reference)
-                || entry.get("hostname").is_some_and(|v| v.as_str() != Some("github.com"))
-                || sha.len() != 40 || !sha.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+                || entry
+                    .get("hostname")
+                    .is_some_and(|v| v.as_str() != Some("github.com"))
+                || sha.len() != 40
+                || !sha
+                    .bytes()
+                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
                 || sha.bytes().all(|b| b == b'0')
-                || !roadmap_repository(checkout, entry["owner_id"].as_u64()?, entry["repo_id"].as_u64()?)
+                || !roadmap_repository(
+                    checkout,
+                    entry["owner_id"].as_u64()?,
+                    entry["repo_id"].as_u64()?,
+                )
             {
                 return None;
             }
@@ -336,7 +347,11 @@ mod native {
             assert_ne!(edit, workflow);
             assert!(!accepted(&edit, lock));
         }
-        for expected in [".github/workflows/issue-roadmap.yml", "197814629", "205262760"] {
+        for expected in [
+            ".github/workflows/issue-roadmap.yml",
+            "197814629",
+            "205262760",
+        ] {
             let edit = lock.replace(expected, "absent");
             assert_ne!(edit, lock);
             assert!(!accepted(workflow, &edit));
@@ -366,8 +381,7 @@ mod native {
         assert!(!roadmap_matches(&workflow_hash, &workflow_hash));
         assert!(!roadmap_matches(&script_hash, &script_hash));
     }
-{% endif %}
-{% if verify_ci %}
+{% endif %}{% if verify_ci %}
     fn text<'a>(node: tree_sitter::Node<'_>, source: &'a str) -> &'a str {
         node.utf8_text(source.as_bytes()).unwrap()
     }
