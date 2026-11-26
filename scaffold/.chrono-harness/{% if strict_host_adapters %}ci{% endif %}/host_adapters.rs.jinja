@@ -1,3 +1,5 @@
+{%- import 'tool-catalog.jinja' as tools with context -%}
+{%- set selected_commands = tools.selected_tools | select('in', tools.catalog) | sort | list -%}
 {%- set install_command = 'sh .chrono-harness/install-tools.sh' -%}
 //! These two adapters use the registered bootstrap table and release program.
 //! The shell reader checks the observed commands, platform cases and selected control dependencies.
@@ -53,6 +55,22 @@ pub fn mise_manifest() -> (s: &'static str) {
     include_str!("../../.config/mise/conf.d/chrono-harness.toml")
 }
 
+{% endif %}{% if selected_commands %}/// The template renders these same rows into both mise platform tables.
+pub fn installed_asset(linux: bool) -> (fields: (&'static str, usize))
+    ensures linux ==> fields.0@ == "linux-x86_64"@ && fields.1 == 1,
+        !linux ==> fields.0@ == "macos-aarch64"@ && fields.1 == 2,
+{
+    if linux {
+{% for platform, suffix, index in tools.release_platforms if platform == 'linux-x64' %}        ("{{ suffix }}", {{ index }})
+{% endfor %}    } else {
+{% for platform, suffix, index in tools.release_platforms if platform == 'macos-arm64' %}        ("{{ suffix }}", {{ index }})
+{% endfor %}    }
+}
+
+pub fn installed_config() -> (s: &'static str) {
+    include_str!("../../.config/mise/conf.d/selected-chrono-harness.toml")
+}
+
 {% endif %}pub fn installer() -> (s: &'static str) { include_str!("install.sh") }
 pub fn workflow() -> (s: &'static str) { include_str!("../../.github/workflows/release.yml") }
 {% if manage_roadmap -%}
@@ -79,6 +97,38 @@ pub fn roadmap_matches(script: &String, workflow: &String) -> (accepted: bool)
 mod native {
     use super::*;
     use serde_yaml::Value;
+{% if selected_commands %}
+    #[test]
+    fn installed_assets_use_the_verified_platforms() {
+        let document: toml::Value = toml::from_str(installed_config()).unwrap();
+        let entries = document["tools"].as_table().unwrap();
+        let commands = [
+{% for command in selected_commands %}            ("{{ command }}", "{{ tools.catalog[command][0] }}"),
+{% endfor %}        ];
+        assert_eq!(entries.len(), commands.len());
+        for (command, repository) in commands {
+            let platforms = entries[&format!("http:{command}")]["platforms"].as_table().unwrap();
+            assert_eq!(platforms.len(), 2);
+            for (name, linux) in [("linux-x64", true), ("macos-arm64", false)] {
+                let (suffix, index) = installed_asset(linux);
+                let selected = format!("vars.selected_{}", command.replace('-', "_"));
+                let pin = format!(r#"read_toml(path=vars.chrono_pins)["tools"]["http:{command}"]["platforms"]["{name}"]"#);
+                let url = r#"{{ tools.selected_url | replace('\n', '') }}"#
+                    .replace("SELECTED", &selected)
+                    .replace("PLATFORM", &pin)
+                    .replace("REPOSITORY", repository)
+                    .replace("ASSET", &format!("{command}-{suffix}"));
+                let checksum = r#"{{ tools.selected_checksum | replace('\n', '') }}"#
+                    .replace("SELECTED", &selected)
+                    .replace("PLATFORM", &pin)
+                    .replace("COMMAND", command)
+                    .replace("INDEX", &index.to_string());
+                assert_eq!(platforms[name]["url"].as_str(), Some(url.as_str()));
+                assert_eq!(platforms[name]["checksum"].as_str(), Some(checksum.as_str()));
+            }
+        }
+    }
+{% endif %}
 {% if manage_roadmap %}
     #[test]
     fn deployed_roadmap_matches_the_selected_template() {
