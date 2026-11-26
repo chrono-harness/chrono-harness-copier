@@ -102,14 +102,14 @@ mod native {
     fn installed_assets_use_the_verified_platforms() {
         let document: toml::Value = toml::from_str(installed_config()).unwrap();
         let entries = document["tools"].as_table().unwrap();
-        let commands = [
-{% for command in selected_commands %}            ("{{ command }}", "{{ tools.catalog[command][0] }}"),
-{% endfor %}        ];
-        assert_eq!(entries.len(), commands.len());
-        for (command, repository) in commands {
-            let platforms = entries[&format!("http:{command}")]["platforms"]
-                .as_table()
-                .unwrap();
+        assert_eq!(entries.len(), {{ selected_commands | length }});
+        for (key, tool) in entries {
+            let command = key.strip_prefix("http:").unwrap();
+            let repository = match command {
+{% for command in selected_commands %}                "{{ command }}" => "{{ tools.catalog[command][0] }}",
+{% endfor %}                _ => panic!("unexpected selected tool {command}"),
+            };
+            let platforms = tool["platforms"].as_table().unwrap();
             assert_eq!(platforms.len(), 2);
             for (name, linux) in [("linux-x64", true), ("macos-arm64", false)] {
                 let (suffix, index) = installed_asset(linux);
