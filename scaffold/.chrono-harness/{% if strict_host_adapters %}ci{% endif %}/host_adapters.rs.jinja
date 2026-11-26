@@ -6,7 +6,7 @@
 //! Deployment checks for the files selected by this host.
 #![allow(unexpected_cfgs)]
 #[cfg(not(verus_keep_ghost))]
-use {{ strict_host_adapters.verus_macro_crate }}::verus;
+use {{ strict_host_adapters.verus_macro_crate }}{% if strict_host_adapters.verus_macro_crate == 'vstd' %}::prelude{% endif %}::verus;
 #[cfg(verus_keep_ghost)]
 use vstd::prelude::*;
 

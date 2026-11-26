@@ -92,10 +92,11 @@ fi
 grep -Fq 'let selected = false;' "$stage/strict-without-instructions/.chrono-harness/ci/host_adapters.rs"
 uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
   -d 'features=["test-git"]' -d manage_roadmap=false \
-  -d 'strict_host_adapters={"verus_macro_crate":"chrono_example"}' . "$stage/strict-install"
+  -d 'strict_host_adapters={"verus_macro_crate":"vstd"}' . "$stage/strict-install"
 digest=$(shasum -a 256 "$stage/strict-install/.chrono-harness/install-tools.sh" | cut -d ' ' -f 1)
 root="$stage/strict-install/.chrono-harness/ci/host_adapters.rs"
 grep -Fq "$digest" "$root"
+grep -Fxq "use vstd::prelude::verus;" "$root"
 if grep -Eq 'fn (installer|workflow|deployed_roadmap)\(' "$root"; then
   echo "Installation-only adapter references CI, release or roadmap files" >&2
   exit 1
