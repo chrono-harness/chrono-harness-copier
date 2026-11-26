@@ -60,20 +60,23 @@ project_guide:
 strict_host_adapters:
   type: yaml
   default: {}
-  help: 可选的严格 Rust 宿主安装与发布入口登记，填写本仓 bootstrap 程序名、CI 工具清单和测试 crate 的 Verus 宏来源。
+  help: 选装严格模板部署检查时填写 verus_macro_crate。另填 binary 和 ci_tools 可验证对应的 CI 启动器与标签发布工作流。
   validator: |
     {%- if strict_host_adapters -%}
     {%- set a = strict_host_adapters -%}
-    {%- if a is not mapping or a.keys() | sort != ['binary', 'ci_tools', 'verus_macro_crate']
-        or not (a.binary is string and a.binary | regex_search('^[a-z][a-z0-9-]*$'))
-        or not (a.verus_macro_crate is string and a.verus_macro_crate | regex_search('^[a-z][a-z0-9_]*$'))
-        or a.ci_tools is string or not (a.ci_tools is sequence and a.ci_tools | length)
+    {%- if a is not mapping or a.keys() | sort not in [['verus_macro_crate'], ['binary', 'ci_tools', 'verus_macro_crate']]
+        or not (a.verus_macro_crate is string and a.verus_macro_crate | regex_search('^[a-z][a-z0-9_]*$')) -%}
+    请填写 verus_macro_crate；验证 CI 和发布入口时还需同时填写 binary 与 ci_tools
+    {%- elif a.binary is defined -%}
+    {%- if not (a.binary is string and a.binary | regex_search('^[a-z][a-z0-9-]*$'))
+        or a.ci_tools is string or a.ci_tools is mapping or not (a.ci_tools is sequence and a.ci_tools | length)
         or a.ci_tools | unique | list | length != a.ci_tools | length -%}
-    严格宿主需要 binary、ci_tools、verus_macro_crate 三个有效字段
+    请填写有效的发布程序名与非空且唯一的 CI 工具清单
     {%- else -%}
     {%- for tool in a.ci_tools if not (tool is string and tool | regex_search('^[a-z][a-z0-9-]*$')) -%}
     CI 工具名只接受小写字母、数字和连字符
     {%- endfor -%}
+    {%- endif -%}
     {%- endif -%}
     {%- endif -%}
 local_check_retention:

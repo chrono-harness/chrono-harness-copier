@@ -73,7 +73,7 @@ uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
   -d repository=sample/strict-example \
   -d 'strict_host_adapters={"binary":"chrono-example","verus_macro_crate":"chrono_example","ci_tools":["chrono-harness","verus"]}' \
   . "$stage/strict"
-for program in .github/roadmap.cjs .github/workflows/issue-roadmap.yml; do
+for program in .github/roadmap.cjs .github/workflows/issue-roadmap.yml .chrono-harness/install-tools.sh; do
   digest=$(shasum -a 256 "$stage/strict/$program" | cut -d ' ' -f 1)
   grep -Fq "$digest" "$stage/strict/.chrono-harness/ci/host_adapters.rs"
 done
@@ -90,6 +90,16 @@ if grep -Fq 'fn deployed_roadmap' "$stage/strict-without-instructions/.chrono-ha
   exit 1
 fi
 grep -Fq 'let selected = false;' "$stage/strict-without-instructions/.chrono-harness/ci/host_adapters.rs"
+uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
+  -d 'features=["test-git"]' -d manage_roadmap=false \
+  -d 'strict_host_adapters={"verus_macro_crate":"chrono_example"}' . "$stage/strict-install"
+digest=$(shasum -a 256 "$stage/strict-install/.chrono-harness/install-tools.sh" | cut -d ' ' -f 1)
+root="$stage/strict-install/.chrono-harness/ci/host_adapters.rs"
+grep -Fq "$digest" "$root"
+if grep -Eq 'fn (installer|workflow|deployed_roadmap)\(' "$root"; then
+  echo "Installation-only adapter references CI, release or roadmap files" >&2
+  exit 1
+fi
 cmp .github/roadmap.cjs "$stage/copier/.github/roadmap.cjs"
 cmp .github/workflows/issue-roadmap.yml "$stage/copier/.github/workflows/issue-roadmap.yml"
 cmp .github/workflows/release.yml "$stage/copier/.github/workflows/release.yml"
