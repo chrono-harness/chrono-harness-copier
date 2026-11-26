@@ -118,6 +118,10 @@ mod native {
     use super::*;
     use serde_yaml::Value;
 {% if selected_commands %}
+    fn when_selected(condition: &str, installed: &str, pinned: &str) -> String {
+        format!("{% raw %}{{% if {condition} %}}{installed}{{% else %}}{pinned}{{% endif %}}{% endraw %}")
+    }
+
     // Reconstruct the actions of the host's actual mise expressions for every
     // outcome of its built-in file, TOML lookup and regex operations.
     fn installed_field_expression(is_version: bool, command: &str, index: usize) -> String {
@@ -152,13 +156,21 @@ mod native {
             let has = format!(r#"{% raw %}{{% if data is defined and "{command}" in data %}}{% endraw %}"#);
             format!("{file}{has}{inner}{end}{fallback}")
         } else {
-            format!("{% raw %}{{% if SELECTED %}}{% endraw %}{inner}{otherwise}{fallback}{end}")
+            when_selected("SELECTED", &inner, &fallback)
         }
     }
 
     #[test]
     fn installed_assets_use_the_verified_platforms() {
         let document: toml::Value = toml::from_str(installed_config()).unwrap();
+        assert_eq!(
+            document["vars"]["chrono_selection"].as_str(),
+            Some("{% raw %}{{ config_root }}{% endraw %}/.chrono-harness/state/tool-selection/versions.toml")
+        );
+        assert_eq!(
+            document["vars"]["chrono_pins"].as_str(),
+            Some("{% raw %}{{ config_root }}{% endraw %}/.config/mise/conf.d/chrono-harness.toml")
+        );
         let entries = document["tools"].as_table().unwrap();
         assert_eq!(entries.len(), {{ selected_commands | length }});
         for (key, tool) in entries {
@@ -172,19 +184,22 @@ mod native {
                 document["vars"][&variable].as_str(),
                 Some(installed_field_expression(true, command, 0).as_str())
             );
+            let selected = format!("vars.{variable}");
+            let value = format!("{% raw %}{{{{ {selected} }}}}{% endraw %}");
+            let pin_tool = format!(r#"read_toml(path=vars.chrono_pins)["tools"]["http:{command}"]"#);
+            let pinned_version = format!(r#"{% raw %}{{{{ {pin_tool}["version"] }}}}{% endraw %}"#);
+            let version = when_selected(&selected, &value, &pinned_version);
+            assert_eq!(tool["version"].as_str(), Some(version.as_str()));
             let platforms = tool["platforms"].as_table().unwrap();
             assert_eq!(platforms.len(), 2);
             for (name, linux) in [("linux-x64", true), ("macos-arm64", false)] {
                 let (suffix, index) = installed_asset(linux);
-                let selected = format!("vars.selected_{}", command.replace('-', "_"));
-                let pin = format!(
-                    r#"read_toml(path=vars.chrono_pins)["tools"]["http:{command}"]["platforms"]["{name}"]"#
+                let pin = format!(r#"{pin_tool}["platforms"]["{name}"]"#);
+                let asset = format!(
+                    "https://github.com/{repository}/releases/download/v{value}/{command}-{suffix}"
                 );
-                let url = r#"{{ tools.selected_url | replace('\n', '') }}"#
-                    .replace("SELECTED", &selected)
-                    .replace("PLATFORM", &pin)
-                    .replace("REPOSITORY", repository)
-                    .replace("ASSET", &format!("{command}-{suffix}"));
+                let pinned_url = format!(r#"{% raw %}{{{{ {pin}["url"] }}}}{% endraw %}"#);
+                let url = when_selected(&selected, &asset, &pinned_url);
                 let checksum = installed_field_expression(false, command, index)
                     .replace("SELECTED", &selected)
                     .replace("PLATFORM", &pin);
