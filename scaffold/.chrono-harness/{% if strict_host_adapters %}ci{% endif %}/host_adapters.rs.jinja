@@ -525,13 +525,14 @@ mod native {
             ),
             selected
         ));
-{% if local_check_retention %}        assert!(!setup_matches(&original.replace("{{ retention_setup_command }}", "true"), selected));
-        let install_only =
-            "[tools]\n[tasks.harness-setup]\nrun = ['{{ install_command }}', '{{ retention_setup_command }}']";
+{% if local_check_retention %}        assert!(!setup_matches(
+            &original.replace("{{ retention_setup_command }}", "true"),
+            selected
+        ));
+        let install_only = "[tools]\n[tasks.harness-setup]\nrun = ['{{ install_command }}', '{{ retention_setup_command }}']";
 {% else %}        let install_only =
             "[tools]\n[tasks.harness-setup]\nrun = '{{ install_command }}'";
-{% endif -%}
-        assert!(setup_matches(install_only, false));
+{% endif %}        assert!(setup_matches(install_only, false));
         assert!(!setup_matches(install_only, true));
         let reverse = "[tools.'http:chrono-instructions']\n[tasks.harness-setup]\nrun=['mise exec -- chrono-instructions sync-rules --host-root .','{{ install_command }}']";
         assert!(!setup_matches(reverse, true));
