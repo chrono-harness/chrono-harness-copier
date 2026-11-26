@@ -631,7 +631,7 @@ mod native {
         let decision = &steps[1];
         if checkout.as_mapping().map(|x| x.len()) != Some(2)
             || checkout["uses"].as_str()
-                != Some("actions/checkout@11d5960a326750d5838078e36cf38b85af677262")
+                != Some("actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1")
             || checkout["with"].as_mapping().map(|x| x.len()) != Some(2)
             || checkout["with"]["fetch-depth"].as_i64() != Some(0)
             || checkout["with"]["persist-credentials"].as_bool() != Some(false)
