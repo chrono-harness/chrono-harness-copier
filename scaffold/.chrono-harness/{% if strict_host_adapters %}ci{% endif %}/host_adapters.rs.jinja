@@ -67,6 +67,26 @@ pub fn installed_asset(linux: bool) -> (fields: (&'static str, usize))
 {% endfor %}    }
 }
 
+/// mise reports file/key presence and applies the selected Rust-regex expression.
+#[derive(Clone, Copy)]
+pub enum InstalledValue { Pin, Use, Reject }
+
+pub fn installed_value(present: bool, matches: bool) -> (action: InstalledValue)
+    ensures !present ==> action == InstalledValue::Pin,
+        present && matches ==> action == InstalledValue::Use,
+        present && !matches ==> action == InstalledValue::Reject,
+{
+    if !present { InstalledValue::Pin } else if matches { InstalledValue::Use }
+    else { InstalledValue::Reject }
+}
+
+pub fn installed_pattern(is_version: bool) -> (pattern: &'static str)
+    ensures is_version ==> pattern@ == "^[0-9]+[.][0-9]+[.][0-9]+(-[A-Za-z0-9-]+([.][A-Za-z0-9-]+)*)?$"@,
+        !is_version ==> pattern@ == "^sha256:[a-f0-9]{64}$"@,
+{
+    if is_version { "{{ tools.version_pattern }}" } else { "{{ tools.checksum_pattern }}" }
+}
+
 pub fn installed_config() -> (s: &'static str) {
     include_str!("../../.config/mise/conf.d/selected-chrono-harness.toml")
 }
@@ -98,6 +118,44 @@ mod native {
     use super::*;
     use serde_yaml::Value;
 {% if selected_commands %}
+    // Reconstruct the actions of the host's actual mise expressions for every
+    // outcome of its built-in file, TOML lookup and regex operations.
+    fn installed_field_expression(is_version: bool, command: &str, index: usize) -> String {
+        let (value, lookup, field) = if is_version {
+            ("version", format!(r#"data["{command}"][0]"#), "version")
+        } else {
+            (
+                "hash",
+                format!(r#"read_toml(path=vars.chrono_selection)["{command}"][{index}]"#),
+                "checksum",
+            )
+        };
+        let action = |present, matches| match installed_value(present, matches) {
+            InstalledValue::Pin if is_version => String::new(),
+            InstalledValue::Pin => r#"{% raw %}{{ PLATFORM["checksum"] }}{% endraw %}"#.to_owned(),
+            InstalledValue::Use => format!("{% raw %}{{{{ {value} }}}}{% endraw %}"),
+            InstalledValue::Reject => format!(
+                r#"{% raw %}{{{{ throw(message="Invalid installed release {field}") }}}}{% endraw %}"#
+            ),
+        };
+        let assign = format!("{% raw %}{{% set {value} = {lookup} %}}{% endraw %}");
+        let pattern = installed_pattern(is_version);
+        let check = format!(r#"{% raw %}{{% if {value} is matching(pat="{pattern}") %}}{% endraw %}"#);
+        let yes = action(true, true);
+        let no = action(true, false);
+        let fallback = action(false, false);
+        let end = "{% raw %}{% endif %}{% endraw %}";
+        let otherwise = "{% raw %}{% else %}{% endraw %}";
+        let inner = format!("{assign}{check}{yes}{otherwise}{no}{end}");
+        if is_version {
+            let file = "{% raw %}{% if vars.chrono_selection is exists %}{% set data = read_toml(path=vars.chrono_selection) %}{% endif %}{% endraw %}";
+            let has = format!(r#"{% raw %}{{% if data is defined and "{command}" in data %}}{% endraw %}"#);
+            format!("{file}{has}{inner}{end}{fallback}")
+        } else {
+            format!("{% raw %}{{% if SELECTED %}}{% endraw %}{inner}{otherwise}{fallback}{end}")
+        }
+    }
+
     #[test]
     fn installed_assets_use_the_verified_platforms() {
         let document: toml::Value = toml::from_str(installed_config()).unwrap();
@@ -109,6 +167,11 @@ mod native {
 {% for command in selected_commands %}                "{{ command }}" => "{{ tools.catalog[command][0] }}",
 {% endfor %}                _ => panic!("unexpected selected tool {command}"),
             };
+            let variable = format!("selected_{}", command.replace('-', "_"));
+            assert_eq!(
+                document["vars"][&variable].as_str(),
+                Some(installed_field_expression(true, command, 0).as_str())
+            );
             let platforms = tool["platforms"].as_table().unwrap();
             assert_eq!(platforms.len(), 2);
             for (name, linux) in [("linux-x64", true), ("macos-arm64", false)] {
@@ -122,11 +185,9 @@ mod native {
                     .replace("PLATFORM", &pin)
                     .replace("REPOSITORY", repository)
                     .replace("ASSET", &format!("{command}-{suffix}"));
-                let checksum = r#"{{ tools.selected_checksum | replace('\n', '') }}"#
+                let checksum = installed_field_expression(false, command, index)
                     .replace("SELECTED", &selected)
-                    .replace("PLATFORM", &pin)
-                    .replace("COMMAND", command)
-                    .replace("INDEX", &index.to_string());
+                    .replace("PLATFORM", &pin);
                 assert_eq!(platforms[name]["url"].as_str(), Some(url.as_str()));
                 assert_eq!(
                     platforms[name]["checksum"].as_str(),
