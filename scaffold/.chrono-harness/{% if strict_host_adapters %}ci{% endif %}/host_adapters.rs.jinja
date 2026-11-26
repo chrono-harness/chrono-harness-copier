@@ -134,9 +134,9 @@ mod native {
             InstalledValue::Pin if is_version => String::new(),
             InstalledValue::Pin => r#"{% raw %}{{ PLATFORM["checksum"] }}{% endraw %}"#.to_owned(),
             InstalledValue::Use => format!("{% raw %}{{{{ {value} }}}}{% endraw %}"),
-            InstalledValue::Reject => format!(
-                r#"{% raw %}{{{{ throw(message="Invalid installed release {field}") }}}}{% endraw %}"#
-            ),
+            InstalledValue::Reject => {
+                format!(r#"{% raw %}{{{{ throw(message="Invalid installed release {field}") }}}}{% endraw %}"#)
+            }
         };
         let assign = format!("{% raw %}{{% set {value} = {lookup} %}}{% endraw %}");
         let pattern = installed_pattern(is_version);
