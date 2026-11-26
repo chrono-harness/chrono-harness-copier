@@ -4,8 +4,13 @@ cd "$(dirname "$0")/.."
 if [[ ${1:-} != --managed-scratch && ${GITHUB_ACTIONS:-} != true ]] && [[ -d .git && ! -L .git && ! -L target && ! -L target/native-checks && ! -L copier-renders ]]; then
   exec chrono-host-bootstrap native-scratch run bash ./tests/check.sh --managed-scratch
 fi
+copier_requirements="$PWD/tests/requirements.txt"
+copier() {
+  uv run --no-project --python ">=3.11" --with-requirements "$copier_requirements" -- copier "$@"
+}
+
 node --test tests/roadmap.test.cjs
-PYTHONDONTWRITEBYTECODE=1 uv run --no-project --python ">=3.11" --with PyYAML==6.0.3 python tests/test_release.py
+PYTHONDONTWRITEBYTECODE=1 uv run --no-project --python ">=3.11" --with-requirements .github/requirements.txt python tests/test_release.py
 if [[ ${1:-} == --managed-scratch ]]; then
   stage=${CHRONO_NATIVE_SCRATCH:?missing managed render directory}
 else
@@ -20,20 +25,20 @@ else
   stage=$(mktemp -d "$stage_parent/copier-check.XXXXXXXX")
   trap 'rm -rf -- "$stage"' EXIT
 fi
-uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD -d repository=chrono-harness/chrono-harness-copier "$PWD" "$stage/default"
-uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD -d 'features=[]' -d github_templates=false -d manage_roadmap=false . "$stage/empty"
+copier copy --defaults --vcs-ref HEAD -d repository=chrono-harness/chrono-harness-copier "$PWD" "$stage/default"
+copier copy --defaults --vcs-ref HEAD -d 'features=[]' -d github_templates=false -d manage_roadmap=false . "$stage/empty"
 # Exercise the native update list in existing render cases.
 updates='[{"package-ecosystem":"cargo","directories":["/crates/a","/crates/b"],"schedule":{"interval":"daily"},"groups":{"rust":{"patterns":["*"]}}},{"package-ecosystem":"github-actions","directory":"/","schedule":{"interval":"weekly"},"target-branch":"release"}]'
-uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
+copier copy --defaults --vcs-ref HEAD \
   -d 'features=["pr"]' -d repository=chrono-harness/chrono-harness-copier \
   -d "dependabot_updates=$updates" -d 'project_guide=业务源码位于 src/。' -d generate_check=true -d 'check_command=python3 check.py' . "$stage/selected"
-uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
+copier copy --defaults --vcs-ref HEAD \
   -d 'features=[]' -d dev_branch= -d "dependabot_updates=$updates" -d local_check_retention=true "$PWD" "$stage/local-check-retention"
-uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
+copier copy --defaults --vcs-ref HEAD \
   -d 'features=[]' -d local_check_retention=true \
   -d "dependabot_updates=$updates" -d dependabot_auto_merge=false -d native_check_keep_seconds=45 -d 'expire_local_check_slots=[".chrono-harness/state/collection/check.json",".chrono-harness/state/other/a b.json"]' \
   "$PWD" "$stage/expiring-checks"
-if uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
+if copier copy --defaults --vcs-ref HEAD \
     -d 'features=[]' -d local_check_retention=true \
     -d 'expire_local_check_slots=[".chrono-harness/state/../ci/report.json"]' \
     "$PWD" "$stage/invalid-checks" >"$stage/invalid-checks.log" 2>&1; then
@@ -51,7 +56,7 @@ grep -Fq '必须填写 .chrono-harness/state/' "$stage/invalid-checks.log"
   git init -qb dev
   git add .
   git -c user.name=Copier -c user.email=copier@example.invalid commit -qm "Host with its own policy"
-  uvx --from copier==9.19.1 copier update --defaults --vcs-ref HEAD \
+  copier update --defaults --vcs-ref HEAD \
     --answers-file .chrono-harness/template-answers.yml -d local_check_retention=false
   grep -Fxq '{"custom":"host-owned"}' .chrono-harness/retention.json
   test ! -e .chrono-harness/maintain-checks.json
@@ -63,7 +68,7 @@ binary_plan=$(python3 -c 'import json,sys; p=json.load(sys.stdin); p.update(kind
 for kind in copier binary; do
   plan=$source_plan
   if [[ "$kind" == binary ]]; then plan=$binary_plan; fi
-  uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
+  copier copy --defaults --vcs-ref HEAD \
     -d 'features=[]' -d "release_plan=$plan" . "$stage/$kind"
   cmp .github/release/plan.py "$stage/$kind/.github/release/plan.py"
   cmp .github/release/publish.py "$stage/$kind/.github/release/publish.py"
@@ -71,7 +76,7 @@ done
 # A host can keep roadmap automation while opting out of every locally installed tool.
 test ! -e "$stage/copier/.config/mise/conf.d/chrono-harness.toml"
 test ! -e "$stage/default/.chrono-harness/ci/host_adapters.rs"
-uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
+copier copy --defaults --vcs-ref HEAD \
   -d repository=sample/strict-example \
   -d 'strict_host_adapters={"binary":"chrono-example","verus_macro_crate":"chrono_example","ci_tools":["chrono-harness","verus"]}' \
   . "$stage/strict"
@@ -83,12 +88,12 @@ grep -Fq 'use chrono_example::verus;' "$stage/strict/.chrono-harness/ci/host_ada
 grep -Fq 'set -- chrono-harness verus' "$stage/strict/.chrono-harness/ci/host_adapters.rs"
 grep -Fq '$RUNNER_TEMP/example-mise.XXXXXXXX' "$stage/strict/.chrono-harness/ci/host_adapters.rs"
 grep -Fq 'let selected = true;' "$stage/strict/.chrono-harness/ci/host_adapters.rs"
-uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
+copier copy --defaults --vcs-ref HEAD \
   -d 'features=[]' -d "dependabot_updates=$updates" -d roadmap_actions_lock=true \
   -d 'strict_host_adapters={"verus_macro_crate":"vstd"}' . "$stage/strict-roadmap-lock"
 grep -Fq 'include_str!("../../.github/workflows/actions.lock")' "$stage/strict-roadmap-lock/.chrono-harness/ci/host_adapters.rs"
 
-uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
+copier copy --defaults --vcs-ref HEAD \
   -d 'features=["cache"]' -d manage_roadmap=false \
   -d 'strict_host_adapters={"binary":"chrono-example","verus_macro_crate":"chrono_example","ci_tools":["verus"]}' \
   . "$stage/strict-without-instructions"
@@ -97,7 +102,7 @@ if grep -Fq 'fn deployed_roadmap' "$stage/strict-without-instructions/.chrono-ha
   exit 1
 fi
 grep -Fq 'let selected = false;' "$stage/strict-without-instructions/.chrono-harness/ci/host_adapters.rs"
-uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
+copier copy --defaults --vcs-ref HEAD \
   -d 'features=["test-git"]' -d manage_roadmap=false \
   -d 'strict_host_adapters={"verus_macro_crate":"vstd"}' . "$stage/strict-install"
 digest=$(shasum -a 256 "$stage/strict-install/.chrono-harness/install-tools.sh" | cut -d ' ' -f 1)
@@ -115,15 +120,15 @@ grep -q '^  build:' "$stage/binary/.github/workflows/release.yml"
 test ! -e "$stage/empty/.github/workflows/release.yml"
 test ! -e "$stage/empty/.github/release"
 for tool in cache registration diagnostics host-bootstrap host-release inputs judge-routes judge-cost worktree judge-filemap judge-mixed judge-projects judge-ci judge-workflow test-git verus; do
-  uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
+  copier copy --defaults --vcs-ref HEAD \
     -d repository=chrono-harness/chrono-harness-copier -d "features=[\"$tool\"]" . "$stage/$tool"
 done
-uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
+copier copy --defaults --vcs-ref HEAD \
   -d 'features=["judge-ci","verus"]' . "$stage/judge-ci-verus"
 uv run --no-project --python ">=3.11" python tests/check_render.py "$stage/empty" "$stage/selected" "$stage/default" "$stage/diagnostics" "$stage/host-bootstrap" "$stage/host-release" "$stage/inputs" "$stage/judge-routes" "$stage/judge-cost" "$stage/worktree" "$stage/judge-filemap" "$stage/judge-mixed" "$stage/judge-projects" "$stage/judge-ci" "$stage/judge-workflow" "$stage/test-git"
 
 # Install and update a rendered tool pair entirely through mocked command boundaries.
-uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
+copier copy --defaults --vcs-ref HEAD \
   -d 'features=["test-git"]' -d tool_install_channels=stable \
   -d 'tool_versions={"chrono-test-git":"v1.2.3","chrono-test-git-profile":"preview"}' . "$stage/install-channels"
 uv run --no-project --python ">=3.11" python tests/test_install.py "$stage/install-channels" "$stage/test-git"
@@ -139,7 +144,7 @@ uv run --no-project --python ">=3.11" python tests/test_install.py "$stage/insta
   }
   record_host
   for choice in '[]' '["instructions"]'; do
-    uvx --from copier==9.19.1 copier update --defaults --vcs-ref HEAD \
+    copier update --defaults --vcs-ref HEAD \
       --answers-file .chrono-harness/template-answers.yml -d "features=$choice"
     echo "Verify tool choice $choice"
     if [[ -n "$(git ls-files --unmerged)" ]]; then

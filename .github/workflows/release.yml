@@ -41,7 +41,7 @@ jobs:
       - name: Install the Copier answers parser
         run: |
           python3 -m venv "$RUNNER_TEMP/release-python"
-          "$RUNNER_TEMP/release-python/bin/pip" install PyYAML==6.0.3
+          "$RUNNER_TEMP/release-python/bin/pip" install --requirement .github/requirements.txt
           echo "$RUNNER_TEMP/release-python/bin" >> "$GITHUB_PATH"
       - id: plan
         env:
