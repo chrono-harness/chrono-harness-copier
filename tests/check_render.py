@@ -31,14 +31,14 @@ assert 'branches: ["dev"]' in (selected / auto_merge).read_text()
 default_branch = full.parent / "local-check-retention"
 assert "target-branch: dev" not in (default_branch / dependabot).read_text()
 assert "target-branch: release" in (default_branch / dependabot).read_text()
-workflow = (default_branch / auto_merge).read_text()
-assert "github.event.pull_request.base.ref == github.event.repository.default_branch" in workflow
-assert "branches:" not in workflow
+merge_workflow = (default_branch / auto_merge).read_text()
+assert "github.event.pull_request.base.ref == github.event.repository.default_branch" in merge_workflow
+assert "branches:" not in merge_workflow
 for fragment in ["pull_request_target:", "github.event.pull_request.user.login == 'dependabot[bot]'",
                  "github.event.pull_request.head.repo.full_name == github.repository",
                  "github.event.pull_request.head.sha", 'gh pr merge --auto --merge --match-head-commit "$HEAD_SHA" "$PR_URL"']:
-    assert fragment in workflow, fragment
-assert "uses:" not in workflow and workflow.count("run:") == 1
+    assert fragment in merge_workflow, fragment
+assert "uses:" not in merge_workflow and merge_workflow.count("run:") == 1
 
 retention_host = full.parent / "local-check-retention"
 policy = Path(".chrono-harness/retention.json")
