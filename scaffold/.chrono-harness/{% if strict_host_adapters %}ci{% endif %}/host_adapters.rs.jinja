@@ -113,15 +113,16 @@ mod native {
                 let (suffix, index) = installed_asset(linux);
                 let selected = format!("vars.selected_{}", command.replace('-', "_"));
                 let pin = format!(r#"read_toml(path=vars.chrono_pins)["tools"]["http:{command}"]["platforms"]["{name}"]"#);
-                let url = format!(
-                    r#"{% raw %}{{% if {selected} %}}https://github.com/{repository}/releases/download/v{{{{ {selected} }}}}/{command}-{suffix}{{% else %}}{{{{ {pin}["url"] }}}}{{% endif %}}{% endraw %}"#
-                );
-                let checksum = format!(concat!(
-                    r#"{% raw %}{{% if {selected} %}}{{% set hash = read_toml(path=vars.chrono_selection)["{command}"][{index}] %}}{% endraw %}"#,
-                    r#"{% raw %}{{% if hash is matching(pat="^sha256:[a-f0-9]{{64}}$") %}}{{{{ hash }}}}{% endraw %}"#,
-                    r#"{% raw %}{{% else %}}{{{{ throw(message="Invalid installed release checksum") }}}}{{% endif %}}{% endraw %}"#,
-                    r#"{% raw %}{{% else %}}{{{{ {pin}["checksum"] }}}}{{% endif %}}{% endraw %}"#,
-                ), selected=selected, command=command, index=index, pin=pin);
+                let url = r#"{{ tools.selected_url | replace('\n', '') }}"#
+                    .replace("SELECTED", &selected)
+                    .replace("PLATFORM", &pin)
+                    .replace("REPOSITORY", repository)
+                    .replace("ASSET", &format!("{command}-{suffix}"));
+                let checksum = r#"{{ tools.selected_checksum | replace('\n', '') }}"#
+                    .replace("SELECTED", &selected)
+                    .replace("PLATFORM", &pin)
+                    .replace("COMMAND", command)
+                    .replace("INDEX", &index.to_string());
                 assert_eq!(platforms[name]["url"].as_str(), Some(url.as_str()));
                 assert_eq!(platforms[name]["checksum"].as_str(), Some(checksum.as_str()));
             }

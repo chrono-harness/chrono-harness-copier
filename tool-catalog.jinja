@@ -31,6 +31,17 @@
 } -%}
 {# The installed selection contains [version, Linux SHA-256, macOS SHA-256]. #}
 {%- set release_platforms = [('linux-x64', 'linux-x86_64', 1), ('macos-arm64', 'macos-aarch64', 2)] -%}
+{%- set selected_url -%}{% raw -%}
+{% if SELECTED %}https://github.com/REPOSITORY/releases/download/v{{ SELECTED }}/ASSET{% else %}{{ PLATFORM["url"] }}{% endif %}
+{%- endraw %}{%- endset -%}
+{%- set selected_checksum -%}{% raw -%}
+{% if SELECTED %}
+{% set hash = read_toml(path=vars.chrono_selection)["COMMAND"][INDEX] %}
+{% if hash is matching(pat="^sha256:[a-f0-9]{64}$") %}
+{{ hash }}
+{% else %}{{ throw(message="Invalid installed release checksum") }}{% endif %}
+{% else %}{{ PLATFORM["checksum"] }}{% endif %}
+{%- endraw %}{%- endset -%}
 {%- macro pins() -%}
 {% for command, record in catalog.items() if command in selected_tools %}
 [tools."http:{{ command }}"]

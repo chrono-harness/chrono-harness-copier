@@ -14,17 +14,6 @@
 {%- set selected_version -%}{% raw -%}
 {% if SELECTED %}{{ SELECTED }}{% else %}{{ PIN["version"] }}{% endif %}
 {%- endraw %}{%- endset -%}
-{%- set url -%}{% raw -%}
-{% if SELECTED %}https://github.com/REPOSITORY/releases/download/v{{ SELECTED }}/ASSET{% else %}{{ PLATFORM["url"] }}{% endif %}
-{%- endraw %}{%- endset -%}
-{%- set checksum -%}{% raw -%}
-{% if SELECTED %}
-{% set hash = read_toml(path=vars.chrono_selection)["COMMAND"][INDEX] %}
-{% if hash is matching(pat="^sha256:[a-f0-9]{64}$") %}
-{{ hash }}
-{% else %}{{ throw(message="Invalid installed release checksum") }}{% endif %}
-{% else %}{{ PLATFORM["checksum"] }}{% endif %}
-{%- endraw %}{%- endset -%}
 {% if commands -%}
 # The checkout supplies the tool names and download locations. Installed data contains versions and SHA-256 only.
 [vars]
@@ -42,7 +31,7 @@ bin = "{{ command }}"
 [tools."http:{{ command }}".platforms]
 {% for platform, suffix, index in tools.release_platforms -%}
 {% set config = pin ~ '["platforms"]["' ~ platform ~ '"]' -%}
-{{ platform }} = { url = {{ url | replace('SELECTED', selected) | replace('PLATFORM', config) | replace('REPOSITORY', tools.catalog[command][0]) | replace('ASSET', command ~ '-' ~ suffix) | to_json }}, checksum = {{ checksum | replace('SELECTED', selected) | replace('PLATFORM', config) | replace('COMMAND', command) | replace('INDEX', index) | replace('\n','') | to_json }} }
+{{ platform }} = { url = {{ tools.selected_url | replace('SELECTED', selected) | replace('PLATFORM', config) | replace('REPOSITORY', tools.catalog[command][0]) | replace('ASSET', command ~ '-' ~ suffix) | to_json }}, checksum = {{ tools.selected_checksum | replace('SELECTED', selected) | replace('PLATFORM', config) | replace('COMMAND', command) | replace('INDEX', index) | replace('\n','') | to_json }} }
 {% endfor -%}
 {% endfor -%}
 {% endif -%}
