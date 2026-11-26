@@ -121,7 +121,7 @@ Copier 首次渲染从模板内的 `.chrono-harness/published-rules.json` 读取
 
 本宿主把安装入口、发布 workflow 及生成的绑定根登记为 program，关联同一次受影响的整 crate Verus 操作与专属 Cargo 行为检查。Cargo 测试目标直接使用同一文件，本配置的测试项目使用 dev-dependencies `toml = "0.9"`（parse、serde、std）、`serde_yaml = "0.9"`、`tree-sitter = "0.25"` 和 `tree-sitter-bash = "0.25"`，分别读取实际工作流、安装脚本和发布命令。Verus 检查管理器选择、顺序和前置作业条件；实际 POSIX 和 GitHub 行为需要下游运行验收。源绑定固定当前 manager 表、平台摘要、选装工具、发布程序与 tag 参数。模板支持的两个固定上游版本为 host-bootstrap v0.1.0-alpha.15 的 `ci-install-table-v1 manager` 和 host-release v0.1.0-alpha.21 的 `check-pushed-tag`。
 
-选装严格检查且生成 mise 清单时，同一验证根读取宿主真实 TOML。请将该清单登记为 program，指向该根。setup 验收检查本仓工具选择、安装与刷新指令的顺序。工具发行标签与摘要由宿主安装流程验证。
+选装严格检查且生成 mise 清单时，同一验证根读取宿主真实 TOML。请将该清单登记为 program，指向该根。setup 验收检查本仓工具选择、安装与刷新指令的顺序。工具发行标签与摘要由宿主安装流程验证。 已选择组织工具时，将同目录的 selected-chrono-harness.toml 也连接到该验证根及原生测试。模板从同一张平台表生成实际下载资产后缀和本地选择中的摘要位置。Verus 核两平台的对应关系，原生检查读取实际 TOML 的完整 URL 和 checksum 表达式。mise 的模板求值与下载以真实安装结果验收。
 
 同时启用严格适配器和路线图时，将 `.github/roadmap.cjs`、`.github/workflows/issue-roadmap.yml` 登记为 program，连接同一验证根与原生测试，并在测试项目添加 dev-dependency `sha2 = "0.10"`。两个文件都进入实际编译。Copier 按所选回答渲染两份内容并生成 SHA-256。原生测试对两个部署文件计算摘要，同源 Verus 判法要求两项分别相等。更改发布者或校验资产时重新渲染。此检查依赖 Copier 的渲染和 SHA-256 的内容绑定，路线图业务判法及外部 GitHub 行为的验收分别见 host-release 与本仓路线图测试。
 

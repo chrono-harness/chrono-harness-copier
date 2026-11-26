@@ -29,6 +29,8 @@
     'chrono-test-git-profile': ('chrono-harness/chrono-harness-test-git', '0.1.0-alpha.2', '9bc04372005be2f001a80ec5bc5f49ebf10d90a45a44f2bea8294fd2c29973e8', '6284a14776a07e1f8e5a65ab7d95cdf3134bd1374c0c8a13ade3c5638ad054a8'),
     'chrono-worktree': ('chrono-harness/chrono-harness-worktree', '0.1.0-alpha.10', 'ee7280875d36161c1b701970c5edf7ccc96ef33e1592416944033b14755619d9', '35fd1ffd55431916a1c123215b3cee09e7e65df24e1110b4142c3581c20c8d8e'),
 } -%}
+{# The installed selection contains [version, Linux SHA-256, macOS SHA-256]. #}
+{%- set release_platforms = [('linux-x64', 'linux-x86_64', 1), ('macos-arm64', 'macos-aarch64', 2)] -%}
 {%- macro pins() -%}
 {% for command, record in catalog.items() if command in selected_tools %}
 [tools."http:{{ command }}"]

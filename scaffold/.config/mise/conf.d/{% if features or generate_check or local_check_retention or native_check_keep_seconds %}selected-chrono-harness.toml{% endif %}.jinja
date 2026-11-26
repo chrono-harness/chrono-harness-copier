@@ -40,7 +40,7 @@ selected_{{ command | replace('-', '_') }} = {{ version | replace('COMMAND', com
 version = {{ selected_version | replace('SELECTED', selected) | replace('PIN', pin) | to_json }}
 bin = "{{ command }}"
 [tools."http:{{ command }}".platforms]
-{% for platform, suffix, index in [('linux-x64','linux-x86_64','1'),('macos-arm64','macos-aarch64','2')] -%}
+{% for platform, suffix, index in tools.release_platforms -%}
 {% set config = pin ~ '["platforms"]["' ~ platform ~ '"]' -%}
 {{ platform }} = { url = {{ url | replace('SELECTED', selected) | replace('PLATFORM', config) | replace('REPOSITORY', tools.catalog[command][0]) | replace('ASSET', command ~ '-' ~ suffix) | to_json }}, checksum = {{ checksum | replace('SELECTED', selected) | replace('PLATFORM', config) | replace('COMMAND', command) | replace('INDEX', index) | replace('\n','') | to_json }} }
 {% endfor -%}
