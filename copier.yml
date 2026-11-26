@@ -141,6 +141,18 @@ check_os:
   help: 业务检查在哪个平台执行？
   default: ubuntu-24.04
   choices: [ubuntu-24.04, macos-15]
+dependabot_updates:
+  type: yaml
+  default: []
+  help: GitHub Dependabot v2 的 updates 列表。填写生态、目录及频率，空列表关闭。
+  validator: >-
+    {% if dependabot_updates is not sequence or dependabot_updates is string or dependabot_updates is mapping
+       or dependabot_updates | reject("mapping") | list %}请提供 Dependabot updates 对象列表{% endif %}
+dependabot_auto_merge:
+  type: bool
+  default: true
+  when: "{{ dependabot_updates | length > 0 }}"
+  help: 本仓 Dependabot PR 通过开发分支的必需检查后自动合并？
 github_templates:
   type: bool
   help: 安装 GitHub Issue 表单及 PR 模板？

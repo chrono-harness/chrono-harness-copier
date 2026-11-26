@@ -1,0 +1,5 @@
+version: 2
+updates:
+{% for update in dependabot_updates %}
+{{ [dict({"target-branch": dev_branch}, **update)] | to_nice_yaml | trim | indent(2, true) }}
+{% endfor %}
