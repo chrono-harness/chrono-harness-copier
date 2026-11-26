@@ -52,7 +52,7 @@ resolve_dynamic() {
         downloads=$(mktemp -d "$temp_parent/chrono-install.XXXXXXXX")
         seed=$downloads/chrono-host-release
         curl --disable --proto '=https' --proto-redir '=https' --fail --silent --show-error --location \
-            "https://github.com/chrono-harness/chrono-harness-host-release/releases/download/v0.1.4-alpha.2/chrono-host-release-$asset" -o "$seed"
+            "https://github.com/chrono-harness/chrono-harness-host-release/releases/download/v0.1.4/chrono-host-release-$asset" -o "$seed"
         verify "$seed" "$seed_sha"
         chmod 700 "$seed"
     fi
