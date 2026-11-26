@@ -315,6 +315,35 @@ mod native {
         Some(projected)
     }
 
+    #[test]
+    fn locked_roadmap_rejects_changes_to_its_deployment_contract() {
+        use sha2::{Digest, Sha256};
+        let (script, workflow) = deployed_roadmap();
+        let lock = deployed_roadmap_lock();
+        let script_hash = format!("{:x}", Sha256::digest(script));
+        let accepted = |candidate: &str, lock: &str| {
+            roadmap_structure(candidate, lock).is_some_and(|structure| {
+                roadmap_matches(&script_hash, &format!("{:x}", Sha256::digest(structure)))
+            })
+        };
+        for (expected, changed) in [
+            ("actions/checkout@", "other/checkout@"),
+            ("contents: read", "contents: write"),
+            ("    steps:\n", "    steps:\n      - run: echo extra\n"),
+            (".releaseIssue(", ".different("),
+        ] {
+            let edit = workflow.replacen(expected, changed, 1);
+            assert_ne!(edit, workflow);
+            assert!(!accepted(&edit, lock));
+        }
+        for expected in [".github/workflows/issue-roadmap.yml", "197814629", "205262760"] {
+            let edit = lock.replace(expected, "absent");
+            assert_ne!(edit, lock);
+            assert!(!accepted(workflow, &edit));
+        }
+        assert!(!accepted(workflow, ""));
+    }
+
 {% endif %}    #[test]
     fn deployed_roadmap_matches_the_selected_template() {
         use sha2::{Digest, Sha256};

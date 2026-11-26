@@ -84,6 +84,11 @@ grep -Fq 'set -- chrono-harness verus' "$stage/strict/.chrono-harness/ci/host_ad
 grep -Fq '$RUNNER_TEMP/example-mise.XXXXXXXX' "$stage/strict/.chrono-harness/ci/host_adapters.rs"
 grep -Fq 'let selected = true;' "$stage/strict/.chrono-harness/ci/host_adapters.rs"
 uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
+  -d 'features=[]' -d "dependabot_updates=$updates" -d roadmap_actions_lock=true \
+  -d 'strict_host_adapters={"verus_macro_crate":"vstd"}' . "$stage/strict-roadmap-lock"
+grep -Fq 'include_str!("../../.github/workflows/actions.lock")' "$stage/strict-roadmap-lock/.chrono-harness/ci/host_adapters.rs"
+
+uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
   -d 'features=["cache"]' -d manage_roadmap=false \
   -d 'strict_host_adapters={"binary":"chrono-example","verus_macro_crate":"chrono_example","ci_tools":["verus"]}' \
   . "$stage/strict-without-instructions"
