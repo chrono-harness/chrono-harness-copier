@@ -1,13 +1,14 @@
 name: Dependabot auto-merge
 on:
   pull_request_target:
-    branches: [{{ dev_branch | tojson }}]
-    types: [opened, reopened, synchronize, ready_for_review]
+{% if dev_branch %}    branches: [{{ dev_branch | tojson }}]
+{% endif %}    types: [opened, reopened, synchronize, ready_for_review]
 permissions: {}
 jobs:
   auto-merge:
     if: >-
-      github.event.pull_request.user.login == 'dependabot[bot]' &&
+{% if not dev_branch %}      github.event.pull_request.base.ref == github.event.repository.default_branch &&
+{% endif %}      github.event.pull_request.user.login == 'dependabot[bot]' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       !github.event.pull_request.draft
     runs-on: ubuntu-24.04

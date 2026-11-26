@@ -4,7 +4,7 @@
 
 仓库默认安装 GitHub 的四类 Issue 表单和 PR 模板。已有协作模板的仓库可在 Copier 中关闭 `github_templates`。
 
-设置 `dependabot_updates` 以启用 GitHub Dependabot。空列表关闭；每项沿用原生 v2 字段，如 `package-ecosystem`、`directory` 或 `directories`、`schedule` 和 `groups`。未指定 `target-branch` 的项目使用 `dev_branch`。例如：
+设置 `dependabot_updates` 以启用 GitHub Dependabot。空列表关闭；每项沿用原生 v2 字段，如 `package-ecosystem`、`directory` 或 `directories`、`schedule` 和 `groups`。未指定 `target-branch` 的项目使用 `dev_branch`。新仓若只使用 GitHub 默认分支，可以将 `dev_branch` 留空，更新和自动合并都会跟随该仓当前的默认分支。例如：
 
 ```yaml
 dependabot_updates:

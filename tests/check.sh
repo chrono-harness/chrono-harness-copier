@@ -22,14 +22,16 @@ else
 fi
 uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD -d repository=chrono-harness/chrono-harness-copier "$PWD" "$stage/default"
 uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD -d 'features=[]' -d github_templates=false -d manage_roadmap=false . "$stage/empty"
+# Exercise the native update list in existing render cases.
+updates='[{"package-ecosystem":"cargo","directories":["/crates/a","/crates/b"],"schedule":{"interval":"daily"},"groups":{"rust":{"patterns":["*"]}}},{"package-ecosystem":"github-actions","directory":"/","schedule":{"interval":"weekly"},"target-branch":"release"}]'
 uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
   -d 'features=["pr"]' -d repository=chrono-harness/chrono-harness-copier \
-  -d 'project_guide=业务源码位于 src/。' -d generate_check=true -d 'check_command=python3 check.py' . "$stage/selected"
+  -d "dependabot_updates=$updates" -d 'project_guide=业务源码位于 src/。' -d generate_check=true -d 'check_command=python3 check.py' . "$stage/selected"
 uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
-  -d 'features=[]' -d local_check_retention=true "$PWD" "$stage/local-check-retention"
+  -d 'features=[]' -d dev_branch= -d "dependabot_updates=$updates" -d local_check_retention=true "$PWD" "$stage/local-check-retention"
 uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
   -d 'features=[]' -d local_check_retention=true \
-  -d native_check_keep_seconds=45 -d 'expire_local_check_slots=[".chrono-harness/state/collection/check.json",".chrono-harness/state/other/a b.json"]' \
+  -d "dependabot_updates=$updates" -d dependabot_auto_merge=false -d native_check_keep_seconds=45 -d 'expire_local_check_slots=[".chrono-harness/state/collection/check.json",".chrono-harness/state/other/a b.json"]' \
   "$PWD" "$stage/expiring-checks"
 if uvx --from copier==9.19.1 copier copy --defaults --vcs-ref HEAD \
     -d 'features=[]' -d local_check_retention=true \
