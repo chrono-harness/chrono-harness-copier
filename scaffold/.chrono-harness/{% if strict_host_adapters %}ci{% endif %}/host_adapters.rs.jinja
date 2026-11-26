@@ -1,16 +1,17 @@
 {%- import 'tool-catalog.jinja' as tools with context -%}
 {%- set selected_commands = tools.selected_tools | select('in', tools.catalog) | sort | list -%}
 {%- set install_command = 'sh .chrono-harness/install-tools.sh' -%}
-//! These two adapters use the registered bootstrap table and release program.
-//! The shell reader checks the observed commands, platform cases and selected control dependencies.
-//! The release YAML reader supplies typed fields; Actions executes job dependencies.
+{%- set verify_ci = strict_host_adapters.ci_tools is defined -%}
+{%- set has_installer = features or generate_check or local_check_retention or native_check_keep_seconds -%}
+//! Deployment checks for the files selected by this host.
 #![allow(unexpected_cfgs)]
 #[cfg(not(verus_keep_ghost))]
-use {{ strict_host_adapters.verus_macro_crate }}::verus;
+use {{ strict_host_adapters.verus_macro_crate }}{% if strict_host_adapters.verus_macro_crate == 'vstd' %}::prelude{% endif %}::verus;
 #[cfg(verus_keep_ghost)]
 use vstd::prelude::*;
 
 verus! {
+{% if verify_ci -%}
 pub enum Manager { Existing, Platform, Unavailable }
 pub fn manager(available: bool, hosted: bool) -> (action: Manager)
     ensures available ==> action == Manager::Existing,
@@ -40,6 +41,7 @@ pub fn requires_success(needs_id: &String, predecessor: &String, explicit_if: bo
     ensures accepted == (needs_id@ == predecessor@ && !explicit_if && !allow_failure),
 { *needs_id == *predecessor && !explicit_if && !allow_failure }
 
+{% endif -%}
 {% if features or generate_check %}/// A mise setup installs tools first and refreshes the rules only when selected.
 pub fn setup_sequence(commands: &[String], instructions: bool) -> (accepted: bool)
     ensures accepted == (commands.len() == (if instructions { 2usize } else { 1usize })
@@ -91,9 +93,22 @@ pub fn installed_config() -> (s: &'static str) {
     include_str!("../../.config/mise/conf.d/selected-chrono-harness.toml")
 }
 
-{% endif %}pub fn installer() -> (s: &'static str) { include_str!("install.sh") }
+{% endif %}{% if has_installer -%}
+{% set script %}{% include 'scaffold/.chrono-harness/{% if features or generate_check or local_check_retention or native_check_keep_seconds %}install-tools.sh{% endif %}.jinja' %}{% endset -%}
+{% set install_hash = script | hash('sha256') -%}
+pub fn deployed_tool_installer() -> (source: &'static str) {
+    include_str!("../install-tools.sh")
+}
+
+pub fn installer_digest_matches(digest: &String) -> (accepted: bool)
+    ensures accepted == (digest@ == "{{ install_hash }}"@),
+{
+    *digest == "{{ install_hash }}".to_string()
+}
+
+{% endif %}{% if verify_ci %}pub fn installer() -> (s: &'static str) { include_str!("install.sh") }
 pub fn workflow() -> (s: &'static str) { include_str!("../../.github/workflows/release.yml") }
-{% if manage_roadmap -%}
+{% endif %}{% if manage_roadmap -%}
 {% set script %}{% include 'scaffold/.github/{% if manage_roadmap %}roadmap.cjs{% endif %}' %}{% endset -%}
 {% set workflow %}{% include 'scaffold/.github/workflows/{% if manage_roadmap %}issue-roadmap.yml{% endif %}.jinja' %}{% endset -%}
 {% set script_hash = script | hash('sha256') -%}
@@ -116,8 +131,18 @@ pub fn roadmap_matches(script: &String, workflow: &String) -> (accepted: bool)
 #[cfg(not(verus_keep_ghost))]
 mod native {
     use super::*;
-    use serde_yaml::Value;
-{% if selected_commands %}
+{% if verify_ci %}    use serde_yaml::Value;
+{% endif %}{% if has_installer %}
+    #[test]
+    fn deployed_tool_installer_matches_the_selected_template() {
+        use sha2::{Digest, Sha256};
+        let digest = format!("{:x}", Sha256::digest(deployed_tool_installer().as_bytes()));
+        assert!(
+            installer_digest_matches(&digest),
+            "install-tools.sh differs from the selected template"
+        );
+    }
+{% endif %}{% if selected_commands %}
     fn when_selected(condition: &str, installed: &str, pinned: &str) -> String {
         format!("{% raw %}{{% if {condition} %}}{installed}{{% else %}}{pinned}{{% endif %}}{% endraw %}")
     }
@@ -212,8 +237,7 @@ mod native {
             }
         }
     }
-{% endif %}
-{% if manage_roadmap %}
+{% endif %}{% if manage_roadmap %}
     #[test]
     fn deployed_roadmap_matches_the_selected_template() {
         use sha2::{Digest, Sha256};
@@ -229,7 +253,7 @@ mod native {
         assert!(!roadmap_matches(&script_hash, &script_hash));
     }
 {% endif %}
-
+{% if verify_ci %}
     fn text<'a>(node: tree_sitter::Node<'_>, source: &'a str) -> &'a str {
         node.utf8_text(source.as_bytes()).unwrap()
     }
@@ -314,11 +338,13 @@ mod native {
         }
     }
 
-{% if features or generate_check %}    fn setup_matches(source: &str, instructions: bool) -> bool {
+{% endif %}{% if features or generate_check %}    fn setup_matches(source: &str, instructions: bool) -> bool {
         let Ok(doc) = source.parse::<toml::Table>() else {
             return false;
         };
-        let instruction_tool = doc.get("tools").and_then(toml::Value::as_table)
+        let instruction_tool = doc
+            .get("tools")
+            .and_then(toml::Value::as_table)
             .is_some_and(|tools| tools.contains_key("http:chrono-instructions"));
         let Some(setup) = doc
             .get("tasks")
@@ -355,7 +381,10 @@ mod native {
         let selected = {{ "true" if "instructions" in features else "false" }};
         assert!(setup_matches(original, selected));
         assert!(!setup_matches(
-            &original.replace("{{ install_command }}", "{{ install_command }} --dry-run"),
+            &original.replace(
+                "{{ install_command }}",
+                "{{ install_command }} --dry-run"
+            ),
             selected
         ));
         assert!(!setup_matches(
@@ -365,7 +394,8 @@ mod native {
             ),
             selected
         ));
-        let install_only = "[tools]\n[tasks.harness-setup]\nrun = '{{ install_command }}'";
+        let install_only =
+            "[tools]\n[tasks.harness-setup]\nrun = '{{ install_command }}'";
         assert!(setup_matches(install_only, false));
         assert!(!setup_matches(install_only, true));
         let reverse = "[tools.'http:chrono-instructions']\n[tasks.harness-setup]\nrun=['mise exec -- chrono-instructions sync-rules --host-root .','{{ install_command }}']";
@@ -373,8 +403,8 @@ mod native {
         let extra = "[tools]\n[tasks.harness-setup]\nrun = ['{{ install_command }}', 'another-command']";
         assert!(!setup_matches(extra, false));
     }
-
-{% endif %}    fn bootstrap_matches(src: &str) -> bool {
+{% endif %}{% if verify_ci %}
+    fn bootstrap_matches(src: &str) -> bool {
         let Some(tree) = shell_tree(src) else {
             return false;
         };
@@ -718,4 +748,4 @@ mod native {
             assert!(!tag_gate(&drift));
         }
     }
-}
+{% endif %}}
