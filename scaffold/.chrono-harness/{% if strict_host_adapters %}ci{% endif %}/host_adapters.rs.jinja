@@ -1,6 +1,7 @@
 {%- import 'tool-catalog.jinja' as tools with context -%}
 {%- set selected_commands = tools.selected_tools | select('in', tools.catalog) | sort | list -%}
 {%- set install_command = 'sh .chrono-harness/install-tools.sh' -%}
+{%- set locked_roadmap = manage_roadmap and roadmap_actions_lock | default(false) -%}
 {%- set verify_ci = strict_host_adapters.ci_tools is defined -%}
 {%- set has_installer = features or generate_check or local_check_retention or native_check_keep_seconds -%}
 //! Deployment checks for the files selected by this host.
@@ -112,13 +113,27 @@ pub fn workflow() -> (s: &'static str) { include_str!("../../.github/workflows/r
 {% set script %}{% include 'scaffold/.github/{% if manage_roadmap %}roadmap.cjs{% endif %}' %}{% endset -%}
 {% set workflow %}{% include 'scaffold/.github/workflows/{% if manage_roadmap %}issue-roadmap.yml{% endif %}.jinja' %}{% endset -%}
 {% set script_hash = script | hash('sha256') -%}
+{% if locked_roadmap -%}
+{% set workflow = workflow | regex_replace('(?m)^(      - uses: actions/(?:checkout|github-script)@)[0-9a-f]{40}$', '\\g<1>LOCKED') -%}
+{% endif -%}
 {% set workflow_hash = workflow | hash('sha256') -%}
 /// Both deployed files are inputs to this proof compilation and its native test.
 pub fn deployed_roadmap() -> (&'static str, &'static str) {
     (include_str!("../../.github/roadmap.cjs"), include_str!("../../.github/workflows/issue-roadmap.yml"))
 }
 
-/// The native caller hashes the actual UTF-8 bytes embedded above.
+{% if locked_roadmap %}pub fn deployed_roadmap_lock() -> &'static str {
+    include_str!("../../.github/workflows/actions.lock")
+}
+
+pub fn roadmap_repository(checkout: bool, owner_id: u64, repo_id: u64) -> (accepted: bool)
+    ensures accepted == (owner_id == 44036562 && ((checkout && repo_id == 197814629)
+        || (!checkout && repo_id == 205262760))),
+{
+    owner_id == 44036562 && repo_id == (if checkout { 197814629 } else { 205262760 })
+}
+{% endif %}
+/// The host-selected template binds the script and workflow structure.
 pub fn roadmap_matches(script: &String, workflow: &String) -> (accepted: bool)
     ensures accepted == (script@ == "{{ script_hash }}"@ && workflow@ == "{{ workflow_hash }}"@),
 {
@@ -131,7 +146,7 @@ pub fn roadmap_matches(script: &String, workflow: &String) -> (accepted: bool)
 #[cfg(not(verus_keep_ghost))]
 mod native {
     use super::*;
-{% if verify_ci %}    use serde_yaml::Value;
+{% if verify_ci or locked_roadmap %}    use serde_yaml::Value;
 {% endif %}{% if has_installer %}
     #[test]
     fn deployed_tool_installer_matches_the_selected_template() {
@@ -241,7 +256,66 @@ mod native {
         }
     }
 {% endif %}{% if manage_roadmap %}
-    #[test]
+{% if locked_roadmap %}    fn locked_roadmap_reference<'a>(
+        lock: &Value,
+        workflow: &'a [Value],
+        repo: &str,
+        checkout: bool,
+    ) -> Option<&'a str> {
+        let mut matched = None;
+        for item in workflow {
+            let name = item.as_str()?;
+            let (source, reference) = name.split_once('@')?;
+            if !source.eq_ignore_ascii_case(repo) {
+                continue;
+            }
+            if source != repo || matched.is_some() {
+                return None;
+            }
+            let entry = lock["dependencies"].get(name)?;
+            let sha = entry["commit"].as_str()?.strip_prefix("sha1-")?;
+            if reference.is_empty()
+                || !reference.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-' | b'/'))
+                || entry["ref"].as_str() != Some(reference)
+                || entry.get("hostname").is_some_and(|v| v.as_str() != Some("github.com"))
+                || sha.len() != 40 || !sha.bytes().all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+                || sha.bytes().all(|b| b == b'0')
+                || !roadmap_repository(checkout, entry["owner_id"].as_u64()?, entry["repo_id"].as_u64()?)
+            {
+                return None;
+            }
+            matched = Some(name);
+        }
+        matched
+    }
+
+    fn roadmap_structure(workflow: &str, lock: &str) -> Option<String> {
+        let lock: Value = serde_yaml::from_str(lock).ok()?;
+        if lock["version"].as_str()? != "v0.0.3" {
+            return None;
+        }
+        let mapping = lock["workflows"][".github/workflows/issue-roadmap.yml"].as_sequence()?;
+        let checkout = locked_roadmap_reference(&lock, mapping, "actions/checkout", true)?;
+        let script = locked_roadmap_reference(&lock, mapping, "actions/github-script", false)?;
+        let mut projected = String::with_capacity(workflow.len());
+        for line in workflow.split_inclusive('\n') {
+            if let Some(value) = line.strip_prefix("      - uses: ") {
+                let repository = match value.strip_suffix('\n')? {
+                    v if v == checkout => "actions/checkout",
+                    v if v == script => "actions/github-script",
+                    _ => return None,
+                };
+                projected.push_str("      - uses: ");
+                projected.push_str(repository);
+                projected.push_str("@LOCKED\n");
+            } else {
+                projected.push_str(line);
+            }
+        }
+        Some(projected)
+    }
+
+{% endif %}    #[test]
     fn deployed_roadmap_matches_the_selected_template() {
         use sha2::{Digest, Sha256};
         let (script, workflow) = deployed_roadmap();
@@ -252,8 +326,11 @@ mod native {
                 .collect::<String>()
         };
         let script_hash = digest(script);
-        let workflow_hash = digest(workflow);
-        assert!(
+{% if locked_roadmap %}        let structure = roadmap_structure(workflow, deployed_roadmap_lock())
+            .expect("the roadmap action references must belong to their GitHub workflow lock");
+        let workflow_hash = digest(&structure);
+{% else %}        let workflow_hash = digest(workflow);
+{% endif %}        assert!(
             roadmap_matches(&script_hash, &workflow_hash),
             "roadmap.cjs or issue-roadmap.yml differs from the selected template"
         );

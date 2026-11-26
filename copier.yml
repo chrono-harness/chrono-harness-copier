@@ -161,6 +161,11 @@ manage_roadmap:
   type: bool
   default: true
   help: 使用本仓 GitHub Issues、Milestones 和公开发行自动维护版本路线图。
+roadmap_actions_lock:
+  type: bool
+  default: false
+  when: "{{ manage_roadmap and strict_host_adapters and dependabot_updates | selectattr('package-ecosystem', 'defined') | selectattr('package-ecosystem', 'equalto', 'github-actions') | list | length > 0 }}"
+  help: 严格验证路线图时，使用 GitHub 原生 actions.lock 管理 checkout 和 github-script 的版本？
 publisher_workflow:
   type: str
   when: "{{ manage_roadmap }}"

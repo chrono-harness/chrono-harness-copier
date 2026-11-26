@@ -133,6 +133,9 @@ Copier 首次渲染从模板内的 `.chrono-harness/published-rules.json` 读取
 
 使用自有 CI 的 Rust 宿主可以给 `strict_host_adapters` 只填 `verus_macro_crate`。Copier 将所选模板文件的校验生成到 `.chrono-harness/ci/host_adapters.rs`。宿主把实际部署的 `.chrono-harness/install-tools.sh`、选用的 mise 配置及路线图脚本和工作流登记到该根，将整根 Verus 验证与原生 Rust 测试加入同一受影响操作。原生测试使用 `sha2 = "0.10"` 读取部署脚本的 SHA-256，使用 `toml` 读取所选的 mise 配置。证明根判断实际摘要是否等于 Copier 按本仓回答渲染的预期摘要。变更回答后重新生成。脚本的选版、下载和安装行为分别由安装命令及其实际使用方验收。
 
+选择路线图、严格适配器和 GitHub Actions 版本更新的宿主，可设置 `roadmap_actions_lock: true`。用 GitHub 的 `gh actions-lock .github/workflows/issue-roadmap.yml` 登记现役工作流，将该工作流和 `.github/workflows/actions.lock` 一起提交，并在运行部署适配器的 Rust 测试项目中提供 `serde_yaml`。验证器从锁中读取该工作流的 checkout 和 github-script 引用，核对 GitHub.com 仓库身份，并比对路线图脚本与工作流其余字节。GitHub Actions 在运行时核验锁定提交的可达性。没有选择此选项的严格宿主继续逐字节核对所选模板。
+
+
 采用 shell 的 mise 安装入口、`source → build → publish` 标签工作流且启用严格 FILEMAP 的 Rust 工具仓，可以设置 `strict_host_adapters`。填写发布二进制名 `binary`、工作流实际安装的有序命令清单 `ci_tools` 和测试项目已有的 Verus 宏导出 crate 名 `verus_macro_crate`。模板生成 `.chrono-harness/ci/host_adapters.rs`。默认空配置不生成该文件。
 
 本宿主把安装入口、发布 workflow 及生成的绑定根登记为 program，关联同一次受影响的整 crate Verus 操作与专属 Cargo 行为检查。Cargo 测试目标直接使用同一文件，本配置的测试项目使用 dev-dependencies `toml = "0.9"`（parse、serde、std）、`serde_yaml = "0.9"`、`tree-sitter = "0.25"` 和 `tree-sitter-bash = "0.25"`，分别读取实际工作流、安装脚本和发布命令。Verus 检查管理器选择、顺序和前置作业条件；实际 POSIX 和 GitHub 行为需要下游运行验收。源绑定固定当前 manager 表、平台摘要、选装工具、发布程序与 tag 参数。模板支持的两个固定上游版本为 host-bootstrap v0.1.0-alpha.15 的 `ci-install-table-v1 manager` 和 host-release v0.1.0-alpha.21 的 `check-pushed-tag`。
