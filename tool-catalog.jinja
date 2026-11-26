@@ -31,13 +31,29 @@
 } -%}
 {# The installed selection contains [version, Linux SHA-256, macOS SHA-256]. #}
 {%- set release_platforms = [('linux-x64', 'linux-x86_64', 1), ('macos-arm64', 'macos-aarch64', 2)] -%}
+{%- set version_pattern = '^[0-9]+[.][0-9]+[.][0-9]+(-[A-Za-z0-9-]+([.][A-Za-z0-9-]+)*)?$' -%}
+{%- set checksum_pattern = '^sha256:[a-f0-9]{64}$' -%}
+{%- set installed_version -%}{% raw -%}
+{% if vars.chrono_selection is exists %}
+{% set data = read_toml(path=vars.chrono_selection) %}
+{% endif %}
+{% if data is defined and "COMMAND" in data %}
+{% set version = data["COMMAND"][0] %}
+{% if version is matching(pat="{% endraw %}{{ version_pattern }}{% raw %}") %}
+{{ version }}
+{% else %}{{ throw(message="Invalid installed release version") }}{% endif %}
+{% endif %}
+{%- endraw %}{%- endset -%}
+{%- set effective_version -%}{% raw -%}
+{% if SELECTED %}{{ SELECTED }}{% else %}{{ PIN["version"] }}{% endif %}
+{%- endraw %}{%- endset -%}
 {%- set selected_url -%}{% raw -%}
 {% if SELECTED %}https://github.com/REPOSITORY/releases/download/v{{ SELECTED }}/ASSET{% else %}{{ PLATFORM["url"] }}{% endif %}
 {%- endraw %}{%- endset -%}
 {%- set selected_checksum -%}{% raw -%}
 {% if SELECTED %}
 {% set hash = read_toml(path=vars.chrono_selection)["COMMAND"][INDEX] %}
-{% if hash is matching(pat="^sha256:[a-f0-9]{64}$") %}
+{% if hash is matching(pat="{% endraw %}{{ checksum_pattern }}{% raw %}") %}
 {{ hash }}
 {% else %}{{ throw(message="Invalid installed release checksum") }}{% endif %}
 {% else %}{{ PLATFORM["checksum"] }}{% endif %}
