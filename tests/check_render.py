@@ -17,6 +17,29 @@ for path in [Path(".github/PULL_REQUEST_TEMPLATE.md"), *Path(".github/ISSUE_TEMP
     assert (full / path).read_bytes() == path.read_bytes()
     assert not (empty / path).exists()
 
+dependabot = Path(".github/dependabot.yml")
+auto_merge = Path(".github/workflows/dependabot-auto-merge.yml")
+assert not (full / dependabot).exists() and not (full / auto_merge).exists()
+manual = full.parent / "expiring-checks"
+assert (manual / dependabot).read_bytes() == (selected / dependabot).read_bytes()
+assert not (manual / auto_merge).exists()
+settings = (selected / dependabot).read_text()
+for fragment in ["package-ecosystem: cargo", "/crates/a", "/crates/b", "groups:", "interval: daily",
+                 "package-ecosystem: github-actions", "target-branch: release", "target-branch: dev"]:
+    assert fragment in settings, (fragment, settings)
+assert 'branches: ["dev"]' in (selected / auto_merge).read_text()
+default_branch = full.parent / "local-check-retention"
+assert "target-branch: dev" not in (default_branch / dependabot).read_text()
+assert "target-branch: release" in (default_branch / dependabot).read_text()
+merge_workflow = (default_branch / auto_merge).read_text()
+assert "github.event.pull_request.base.ref == github.event.repository.default_branch" in merge_workflow
+assert "branches:" not in merge_workflow
+for fragment in ["pull_request_target:", "github.event.pull_request.user.login == 'dependabot[bot]'",
+                 "github.event.pull_request.head.repo.full_name == github.repository",
+                 "github.event.pull_request.head.sha", 'gh pr merge --auto --merge --match-head-commit "$HEAD_SHA" "$PR_URL"']:
+    assert fragment in merge_workflow, fragment
+assert "uses:" not in merge_workflow and merge_workflow.count("run:") == 1
+
 retention_host = full.parent / "local-check-retention"
 policy = Path(".chrono-harness/retention.json")
 request = Path(".chrono-harness/maintain-checks.json")

@@ -4,6 +4,20 @@
 
 仓库默认安装 GitHub 的四类 Issue 表单和 PR 模板。已有协作模板的仓库可在 Copier 中关闭 `github_templates`。
 
+设置 `dependabot_updates` 以启用 GitHub Dependabot。空列表关闭；每项沿用原生 v2 字段，如 `package-ecosystem`、`directory` 或 `directories`、`schedule` 和 `groups`。未指定 `target-branch` 的项目使用 `dev_branch`。新仓若只使用 GitHub 默认分支，可以将 `dev_branch` 留空，更新和自动合并都会跟随该仓当前的默认分支。例如：
+
+```yaml
+dependabot_updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: {interval: weekly}
+  - package-ecosystem: cargo
+    directories: [/crates/app, /crates/app-tests]
+    schedule: {interval: weekly}
+```
+
+选装后默认启用 `dependabot_auto_merge`。在 GitHub 仓库设置打开 **Allow auto-merge**，并为开发分支登记实际 PR 检查为必需状态检查。GitHub 在这些要求满足后合并同仓 Dependabot PR。把 `dependabot_auto_merge` 设为 `false` 可保留更新、改用人工合并。Harness 发行组件继续使用 `tool_versions` 和安装通道。
+
 本仓开发 Chrono Harness 的 Copier 源模板。已有仓库可以按需安装组件并在后续升级时保留本地配置。新建 GitHub 仓库可用 [chrono-harness-template 的 Use this template](https://github.com/chrono-harness/chrono-harness-template/generate)。
 
 在已有仓库的根目录运行 Copier。默认勾选全部可安装组件和 Verus。`test-git` 提供两个测试命令 `chrono-test-git` 和 `chrono-test-git-profile`。用空格取消任意工具，也可以全部取消。工具从各自版本固定的发行下载，mise 按 SHA-256 校验，安装在工作树外。选中 Verus 会一并安装其依赖的 Rust 1.95.0。
