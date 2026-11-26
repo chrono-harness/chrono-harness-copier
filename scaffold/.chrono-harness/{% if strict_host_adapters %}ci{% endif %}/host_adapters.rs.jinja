@@ -55,12 +55,46 @@ pub fn mise_manifest() -> (s: &'static str) {
 
 {% endif %}pub fn installer() -> (s: &'static str) { include_str!("install.sh") }
 pub fn workflow() -> (s: &'static str) { include_str!("../../.github/workflows/release.yml") }
+{% if manage_roadmap -%}
+{% set script %}{% include 'scaffold/.github/{% if manage_roadmap %}roadmap.cjs{% endif %}' %}{% endset -%}
+{% set workflow %}{% include 'scaffold/.github/workflows/{% if manage_roadmap %}issue-roadmap.yml{% endif %}.jinja' %}{% endset -%}
+{% set script_hash = script | hash('sha256') -%}
+{% set workflow_hash = workflow | hash('sha256') -%}
+/// Both deployed files are inputs to this proof compilation and its native test.
+pub fn deployed_roadmap() -> (&'static str, &'static str) {
+    (include_str!("../../.github/roadmap.cjs"), include_str!("../../.github/workflows/issue-roadmap.yml"))
+}
+
+/// The native caller hashes the actual UTF-8 bytes embedded above.
+pub fn roadmap_matches(script: &String, workflow: &String) -> (accepted: bool)
+    ensures accepted == (script@ == "{{ script_hash }}"@ && workflow@ == "{{ workflow_hash }}"@),
+{
+    *script == "{{ script_hash }}".to_string() && *workflow == "{{ workflow_hash }}".to_string()
+}
+{% endif -%}
+
 }
 
 #[cfg(not(verus_keep_ghost))]
 mod native {
     use super::*;
     use serde_yaml::Value;
+{% if manage_roadmap %}
+    #[test]
+    fn deployed_roadmap_matches_the_selected_template() {
+        use sha2::{Digest, Sha256};
+        let (script, workflow) = deployed_roadmap();
+        let digest = |source: &str| format!("{:x}", Sha256::digest(source.as_bytes()));
+        let script_hash = digest(script);
+        let workflow_hash = digest(workflow);
+        assert!(
+            roadmap_matches(&script_hash, &workflow_hash),
+            "roadmap.cjs or issue-roadmap.yml differs from the selected template"
+        );
+        assert!(!roadmap_matches(&workflow_hash, &workflow_hash));
+        assert!(!roadmap_matches(&script_hash, &script_hash));
+    }
+{% endif %}
 
     fn text<'a>(node: tree_sitter::Node<'_>, source: &'a str) -> &'a str {
         node.utf8_text(source.as_bytes()).unwrap()
