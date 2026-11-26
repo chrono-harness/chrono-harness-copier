@@ -186,7 +186,8 @@ mod native {
             );
             let selected = format!("vars.{variable}");
             let value = format!("{% raw %}{{{{ {selected} }}}}{% endraw %}");
-            let pin_tool = format!(r#"read_toml(path=vars.chrono_pins)["tools"]["http:{command}"]"#);
+            let pin_tool =
+                format!(r#"read_toml(path=vars.chrono_pins)["tools"]["http:{command}"]"#);
             let pinned_version = format!(r#"{% raw %}{{{{ {pin_tool}["version"] }}}}{% endraw %}"#);
             let version = when_selected(&selected, &value, &pinned_version);
             assert_eq!(tool["version"].as_str(), Some(version.as_str()));
