@@ -15,7 +15,8 @@ jobs:
   source:
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success' &&
+      ({% endraw %}{% if release_plan.kind == "copier" and release_plan.check.get("dependency_landings") %}{% raw %}(github.event.workflow_run.event == 'push' || (github.event.workflow_run.head_branch == 'dev' &&
+        (github.event.workflow_run.event == 'workflow_run' || github.event.workflow_run.event == 'workflow_dispatch'))){% endraw %}{% else %}{% raw %}github.event.workflow_run.event == 'push'{% endraw %}{% endif %}{% raw %} && github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-24.04
     outputs:
@@ -24,7 +25,8 @@ jobs:
       tag: ${{ steps.plan.outputs.tag }}
       preview: ${{ steps.plan.outputs.preview }}
       proof: ${{ steps.plan.outputs.proof }}
-    steps:
+{% endraw %}{% if release_plan.kind == "copier" and release_plan.check.get("dependency_landings") %}{% raw %}      landing: ${{ steps.plan.outputs.landing }}
+{% endraw %}{% endif %}{% raw %}    steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
@@ -118,7 +120,7 @@ jobs:
       contents: write
       actions: read
     concurrency:
-      group: publish-${{ needs.source.outputs.tag }}
+      group: publish-{% endraw %}{% if release_plan.kind == "copier" and release_plan.check.get("dependency_landings") %}{% raw %}${{ needs.source.outputs.mode == 'preview' && needs.source.outputs.sha || needs.source.outputs.tag }}{% endraw %}{% else %}{% raw %}${{ needs.source.outputs.tag }}{% endraw %}{% endif %}{% raw %}
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -139,7 +141,8 @@ jobs:
           TAG: ${{ needs.source.outputs.tag }}
           PREVIEW: ${{ needs.source.outputs.preview }}
           PROOF: ${{ needs.source.outputs.proof }}
-{% endraw %}{% if release_plan.kind == "binary" %}{% raw %}          BUILD_RECEIPTS: ${{ toJSON(needs.build.outputs) }}
+{% endraw %}{% if release_plan.kind == "copier" and release_plan.check.get("dependency_landings") %}{% raw %}          LANDING: ${{ needs.source.outputs.landing }}
+{% endraw %}{% endif %}{% raw %}{% endraw %}{% if release_plan.kind == "binary" %}{% raw %}          BUILD_RECEIPTS: ${{ toJSON(needs.build.outputs) }}
 {% endraw %}{% endif %}{% raw %}          DIST: ${{ runner.temp }}/dist
         run: python3 .github/release/publish.py
 {% endraw %}

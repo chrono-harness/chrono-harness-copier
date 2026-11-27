@@ -32,6 +32,7 @@ project_guide: ''
 publisher_workflow: Release
 release_plan:
     check:
+        dependency_landings: true
         file: copier.yml
         name: Copier
     consumer:

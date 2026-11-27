@@ -3,7 +3,8 @@
   "version": "0.1.2",
   "check": {
     "file": "copier.yml",
-    "name": "Copier"
+    "name": "Copier",
+    "dependency_landings": true
   },
   "consumer": {
     "repository": "chrono-harness/chrono-harness-example",

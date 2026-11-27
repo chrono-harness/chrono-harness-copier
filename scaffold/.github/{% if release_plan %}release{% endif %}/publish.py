@@ -2,13 +2,14 @@
 import hashlib
 import json
 import os
+import re
 import subprocess
 import tempfile
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
-from plan import attempt_jobs, check_release, config_at, judge, require
+from plan import attempt_jobs, check_release, config_at, judge, landing_notes, require
 
 
 repo = os.environ["GITHUB_REPOSITORY"]
@@ -108,6 +109,24 @@ def binary_origins(config, sha, digests):
     return json.loads(judge("template-binary-origins-v1", query))
 
 
+def published_landing_preview(tag, sha):
+    """A recovery can be a second workflow run for an already published landing."""
+    prefix = tag.rsplit(".", 1)[0] + "."
+    refs = request("git/matching-refs/tags/" + prefix)
+    for ref in refs:
+        name = ref["ref"].removeprefix("refs/tags/")
+        if name == tag or not re.fullmatch(re.escape(prefix) + r"[1-9][0-9]*", name):
+            continue
+        if ref["object"]["type"] != "commit" or ref["object"]["sha"] != sha:
+            continue
+        release = optional("releases/tags/" + name)
+        if release and release["draft"] is False:
+            check_release(release, name, True, False, {})
+            return name
+        raise ValueError(f"unfinished preview {name} already refers to the selected landing")
+    return None
+
+
 def main():
     mode, tag, sha = (os.environ[k] for k in ("MODE", "TAG", "SOURCE_SHA"))
     config = config_at(repo, sha)
@@ -117,6 +136,11 @@ def main():
     dist = Path(os.environ["DIST"])
     dist.mkdir(exist_ok=True)
     stable = mode == "stable"
+    if not stable and os.environ.get("LANDING"):
+        existing = published_landing_preview(tag, sha)
+        if existing:
+            print(f"Dependency landing {sha} already has preview {existing}")
+            return
     release = by_tag(tag)
     if not stable and binary:
         names = [binary + "-macos-aarch64", binary + "-linux-x86_64"]
@@ -148,6 +172,11 @@ def main():
     check_ref("tags/" + tag, sha, request("git/ref/tags/" + tag))
     notes = ("Verified preview " + os.environ["PREVIEW"] + "\nConsumer acceptance: " + os.environ["PROOF"]
                  if stable else "Preview of " + sha)
+    if not stable and os.environ.get("LANDING"):
+        require(config["kind"] == "copier", "unexpected dependency landing for binary publication")
+        landing = json.loads(os.environ["LANDING"])
+        require(landing["sha"] == sha, "landing preview source differs from publication")
+        notes = landing_notes(sha, landing)
     if origins:
         notes += "\n\nBuild origins\n\n```json\n" + json.dumps(origins, sort_keys=True, indent=2) + "\n```"
     if decision["action"] == "create":
@@ -158,14 +187,15 @@ def main():
     current = request(address)
     decision = publication_state(tag, sha, not stable, digests, current)
     require(decision["action"] == "resume", "expected a verified draft")
-    if origins and draft_notes(current, notes, origins, verify=False):
+    has_origins = origins or (not stable and os.environ.get("LANDING"))
+    if has_origins and draft_notes(current, notes, has_origins, verify=False):
         request(address, method="PATCH", data=json.dumps({"body": notes}).encode())
     if decision["missing"]:
         gh("release", "upload", tag, *[dist / name for name in decision["missing"]])
     draft = request(address)
     check_release(draft, tag, not stable, True, assets)
-    if origins:
-        draft_notes(draft, notes, origins, verify=True)
+    if has_origins:
+        draft_notes(draft, notes, has_origins, verify=True)
     check_ref("tags/" + tag, sha, request("git/ref/tags/" + tag))
     if stable:
         main = request("git/ref/heads/main")
