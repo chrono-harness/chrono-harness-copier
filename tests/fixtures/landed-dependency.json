@@ -1,0 +1,74 @@
+{
+  "run": {
+    "id": 45895050659,
+    "run_attempt": 1,
+    "path": "dynamic/github-code-scanning/codeql",
+    "event": "dynamic",
+    "head_branch": "dev",
+    "head_sha": "9798705dd5eb436307b5c84b56e9b086fdfedc3d",
+    "conclusion": "success",
+    "status": "completed",
+    "repository": {
+      "full_name": "chrono-harness/chrono-harness-copier"
+    },
+    "head_repository": {
+      "full_name": "chrono-harness/chrono-harness-copier"
+    }
+  },
+  "associated": [
+    {
+      "number": 108,
+      "merged_at": "2026-11-26T21:00:18Z",
+      "merge_commit_sha": "9798705dd5eb436307b5c84b56e9b086fdfedc3d",
+      "base": {
+        "repo": {
+          "full_name": "chrono-harness/chrono-harness-copier"
+        },
+        "ref": "dev"
+      },
+      "user": {
+        "login": "dependabot[bot]"
+      }
+    }
+  ],
+  "pull": {
+    "number": 108,
+    "merged_at": "2026-11-26T21:00:18Z",
+    "merge_commit_sha": "9798705dd5eb436307b5c84b56e9b086fdfedc3d",
+    "base": {
+      "repo": {
+        "full_name": "chrono-harness/chrono-harness-copier"
+      },
+      "ref": "dev"
+    },
+    "user": {
+      "login": "dependabot[bot]"
+    },
+    "merged": true,
+    "head": {
+      "repo": {
+        "full_name": "chrono-harness/chrono-harness-copier"
+      },
+      "sha": "792d8e34eafcbfa0a2d404a5386ae876b51a0f16"
+    },
+    "merged_by": {
+      "login": "github-actions[bot]"
+    },
+    "auto_merge": {
+      "enabled_by": {
+        "login": "github-actions[bot]"
+      }
+    }
+  },
+  "commit": {
+    "sha": "9798705dd5eb436307b5c84b56e9b086fdfedc3d",
+    "parents": [
+      {
+        "sha": "16ad34c8a6a733f10878dad8bb3d6591edaccf8c"
+      },
+      {
+        "sha": "792d8e34eafcbfa0a2d404a5386ae876b51a0f16"
+      }
+    ]
+  }
+}

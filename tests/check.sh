@@ -10,6 +10,7 @@ copier() {
 }
 
 node --test tests/roadmap.test.cjs
+PYTHONDONTWRITEBYTECODE=1 python3 tests/test_landed_dependency.py
 PYTHONDONTWRITEBYTECODE=1 uv run --no-project --python ">=3.11" --with-requirements .github/requirements.txt python tests/test_release.py
 if [[ ${1:-} == --managed-scratch ]]; then
   stage=${CHRONO_NATIVE_SCRATCH:?missing managed render directory}
