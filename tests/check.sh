@@ -32,7 +32,7 @@ copier copy --defaults --vcs-ref HEAD -d 'features=[]' -d github_templates=false
 updates='[{"package-ecosystem":"cargo","directories":["/crates/a","/crates/b"],"schedule":{"interval":"daily"},"groups":{"rust":{"patterns":["*"]}}},{"package-ecosystem":"github-actions","directory":"/","schedule":{"interval":"weekly"},"target-branch":"release"}]'
 copier copy --defaults --vcs-ref HEAD \
   -d 'features=["pr"]' -d repository=chrono-harness/chrono-harness-copier \
-  -d "dependabot_updates=$updates" -d 'project_guide=业务源码位于 src/。' -d generate_check=true -d 'check_command=python3 check.py' . "$stage/selected"
+  -d "dependabot_updates=$updates" -d check_landed_dependencies=true -d 'project_guide=业务源码位于 src/。' -d generate_check=true -d 'check_command=python3 check.py' . "$stage/selected"
 copier copy --defaults --vcs-ref HEAD \
   -d 'features=[]' -d dev_branch= -d "dependabot_updates=$updates" -d local_check_retention=true "$PWD" "$stage/local-check-retention"
 copier copy --defaults --vcs-ref HEAD \

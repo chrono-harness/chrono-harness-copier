@@ -96,3 +96,4 @@ if __name__ == "__main__":
         print(json.dumps(result, sort_keys=True))
         with open(os.environ["GITHUB_OUTPUT"], "a") as output:
             print("sha=" + result["sha"], file=output)
+            print("base=" + result["base"], file=output)

@@ -23,6 +23,10 @@ assert not (full / dependabot).exists() and not (full / auto_merge).exists()
 manual = full.parent / "expiring-checks"
 assert (manual / dependabot).read_bytes() == (selected / dependabot).read_bytes()
 assert not (manual / auto_merge).exists()
+landing = Path(".github/workflows/check-landed-dependency.yml")
+assert (selected / landing).is_file() and not (full / landing).exists()
+assert (selected / ".github/landed_dependency.py").read_bytes() == Path(".github/landed_dependency.py").read_bytes()
+assert not (manual / landing).exists()
 settings = (selected / dependabot).read_text()
 for fragment in ["package-ecosystem: cargo", "/crates/a", "/crates/b", "groups:", "interval: daily",
                  "package-ecosystem: github-actions", "target-branch: release", "target-branch: dev"]:
