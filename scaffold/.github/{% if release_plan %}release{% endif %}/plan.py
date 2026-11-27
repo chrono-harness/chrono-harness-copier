@@ -4,8 +4,12 @@ import json
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 from urllib.parse import urlencode
+
+
+sys.path.insert(0, str(Path(__file__).absolute().parents[1]))
 
 
 def require(ok, message):
@@ -31,9 +35,9 @@ def judge(command, request):
     return result.stdout
 
 
-def check_run(run, repository, branch, workflow, sha):
+def check_run(run, repository, branch, workflow, sha, *, landing=None):
     judge("template-run-v1", {"run": run, "repository": repository, "branch": branch,
-                              "workflow": workflow, "sha": sha})
+                              "workflow": workflow, "sha": sha, **({"landing": landing} if landing else {})})
 
 
 def successful_run(repository, branch, workflow, sha):
@@ -50,6 +54,50 @@ def attempt_jobs(repository, run_id, attempt):
     path = f"repos/{repository}/actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100"
     pages = json.loads(subprocess.check_output(["gh", "api", "--paginate", "--slurp", path]))
     return [job for page in pages for job in page["jobs"]]
+
+
+def landing_source(repository, run):
+    # The check workflow supplies the CodeQL locator in its run title. GitHub supplies
+    # the pull, parents and the jobs in this exact attempt independently of the tests.
+    from landed_dependency import codeql_attempt, public_read, select
+    require(re.fullmatch(r"[0-9a-f]{40}", run["head_sha"]), "invalid landing workflow revision")
+    contains(repository, run["head_sha"], "dev")
+    title = re.fullmatch(r"CodeQL ([1-9][0-9]*)/([1-9][0-9]*)", run["display_title"])
+    require(title and run["event"] in ("workflow_dispatch", "workflow_run"), "invalid landing event or CodeQL locator")
+    codeql_id, attempt = map(int, title.groups())
+    def read(path):
+        return public_read(repository, path)
+    codeql = codeql_attempt(codeql_id, attempt, read)
+    selected = select(repository, codeql, read)
+    if selected is None:
+        require(run["event"] == "workflow_run", "recovery requires an eligible dependency merge")
+        return None, None
+    source = {"id": run["id"], "attempt": run["run_attempt"], "event": run["event"],
+              "codeql_run": codeql_id, "codeql_attempt": attempt}
+    jobs = attempt_jobs(repository, source["id"], source["attempt"])
+    return {**source, **selected}, {**source, "jobs": jobs}
+
+
+def landing_notes(sha, receipt):
+    return f"Preview of {sha}\n\nDependency landing\n" + json.dumps(receipt, sort_keys=True)
+
+
+def origin_for_preview(config, repository, selected, release):
+    workflow = config["check"]["file"]
+    body = (release or {}).get("body") or ""
+    if "Dependency landing" in body:
+        prefix = f"Preview of {selected}\n\nDependency landing\n"
+        require(body.startswith(prefix), "invalid landing preview notes")
+        stored = json.loads(body[len(prefix):])
+        require(type(stored["id"]) is int and stored["id"] > 0
+                and type(stored["attempt"]) is int and stored["attempt"] > 0, "invalid preview attempt")
+        run = api(f"repos/{repository}/actions/runs/{stored['id']}/attempts/{stored['attempt']}")
+        require((run["id"], run["run_attempt"]) == (stored["id"], stored["attempt"]), "different preview attempt")
+        receipt, evidence = landing_source(repository, run)
+        require(receipt and receipt["sha"] == selected and landing_notes(selected, receipt) == body,
+                "preview notes disagree with dependency landing")
+        return run, {"landing": evidence}
+    return successful_run(repository, "dev", workflow, selected), {}
 
 
 def check_acceptance(repository, run, consumer):
@@ -156,7 +204,7 @@ def event_route(repository, event, event_name):
     }))
 
 
-def plan(config, repository, event, event_name, *, route=None):
+def plan(config, repository, event, event_name, *, route=None, receipt=None, evidence=None):
     if route is None:
         route = event_route(repository, event, event_name)
     require(config["kind"] in ("copier", "binary"), "unsupported release product")
@@ -167,12 +215,18 @@ def plan(config, repository, event, event_name, *, route=None):
     version = config["version"]
     if route in ("dev", "main"):
         run = event["workflow_run"]
-        sha, branch = run["head_sha"], run["head_branch"]
-        check_run(run, repository, branch, check_workflow, sha)
+        sha, branch = receipt["sha"] if receipt else run["head_sha"], run["head_branch"]
+        if evidence:
+            require(route == "dev" and config["kind"] == "copier", "unconfigured landing release")
+            check_run(run, repository, branch, check_workflow, sha, landing=evidence)
+        else:
+            check_run(run, repository, branch, check_workflow, sha)
         completed = already_released(repository, latest, sha)
         if completed:
             return completed
         if route == "dev":
+            if evidence:
+                require(config["check"].get("dependency_landings") is True, "source did not configure landing releases")
             require(re.fullmatch(r"[a-f0-9]{40}", sha), "invalid source commit")
             contains(repository, sha, "dev")
             stable_tag = "v" + version
@@ -184,7 +238,8 @@ def plan(config, repository, event, event_name, *, route=None):
                     released = sha_of(repository, "tags/" + stable_tag)
                     contains(repository, released, "main")
                     return {"mode": "complete", "sha": released, "tag": stable_tag}
-            return {"mode": "preview", "sha": sha, "tag": f"v{version}-alpha.{run['run_number']}"}
+            return {"mode": "preview", "sha": sha, "tag": f"v{version}-alpha.{run['run_number']}",
+                    **({"landing": json.dumps(receipt, sort_keys=True)} if receipt else {})}
     else:
         sha = None
 
@@ -201,19 +256,34 @@ def plan(config, repository, event, event_name, *, route=None):
         return completed
     if route == "dispatch":
         require(config_at(repository, selected) == source_config, "adopted preview has a different release config")
-    origin = successful_run(repository, "dev", check_workflow, selected)
+    landing_enabled = config["kind"] == "copier" and config["check"].get("dependency_landings") is True
+    release = public_preview(repository, tag, checksums) if landing_enabled else None
+    origin, binding = origin_for_preview(config, repository, selected, release)
     judge("template-promotion-v1", {
         "kind": "adopted", "checked_main": sha, "selected": selected, "tag": tag, "version": version,
-        "repository": repository, "workflow": check_workflow, "origin": origin,
+        "repository": repository, "workflow": check_workflow, "origin": origin, **binding,
         "development": compare(repository, selected, "dev"), "main": compare(repository, "main", selected),
     })
-    public_preview(repository, tag, checksums)
+    if not landing_enabled:
+        public_preview(repository, tag, checksums)
     return {"mode": "stable", "sha": selected, "tag": "v" + version, "preview": tag,
             "consumer": downstream, "adopted": adopted, "proof": run["html_url"]}
 
 
 def event_plan(repository, event, event_name, workflow_sha):
     route = event_route(repository, event, event_name)
+    if route == "dev" and event["workflow_run"]["event"] in ("workflow_dispatch", "workflow_run"):
+        run = event["workflow_run"]
+        publisher = config_at(repository, workflow_sha)
+        require(publisher["kind"] == "copier" and publisher["check"].get("dependency_landings") is True
+                and run["path"] == ".github/workflows/" + publisher["check"]["file"]
+                and run["repository"]["full_name"] == run["head_repository"]["full_name"] == repository
+                and run["status"] == "completed" and run["conclusion"] == "success", "unexpected landing workflow")
+        receipt, evidence = landing_source(repository, run)
+        if receipt is None:
+            return {"mode": "complete"}
+        source_config = config_at(repository, receipt["sha"])
+        return plan(source_config, repository, event, event_name, route=route, receipt=receipt, evidence=evidence)
     source = workflow_sha if route == "dispatch" else event["workflow_run"]["head_sha"]
     return plan(config_at(repository, source), repository, event, event_name, route=route)
 

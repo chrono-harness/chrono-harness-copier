@@ -1,13 +1,26 @@
 name: Copier
+run-name: >-
+  ${{ github.event_name == 'workflow_run' && format('CodeQL {0}/{1}', github.event.workflow_run.id, github.event.workflow_run.run_attempt) ||
+      github.event_name == 'workflow_dispatch' && format('CodeQL {0}', inputs.codeql_attempt) || '' }}
 on:
   pull_request:
     branches: [dev, main]
   push:
     branches: [dev, main]
+  workflow_run:
+    workflows: [CodeQL]
+    types: [completed]
+    branches: [dev]
+  workflow_dispatch:
+    inputs:
+      codeql_attempt:
+        description: Completed CodeQL run ID/attempt for the landed dependency
+        required: true
 permissions:
   contents: read
 jobs:
   check:
+    if: github.event_name == 'push' || github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -15,3 +28,30 @@ jobs:
           persist-credentials: false
       - run: pipx install uv
       - run: ./tests/check.sh
+  source:
+    name: Select landed dependency
+    if: github.ref == 'refs/heads/dev' && (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+    runs-on: ubuntu-24.04
+    outputs:
+      sha: ${{ steps.source.outputs.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ github.workflow_sha }}
+          persist-credentials: false
+      - id: source
+        name: Select the landed commit
+        run: python3 .github/landed_dependency.py
+  check-landing:
+    name: Check landed ${{ needs.source.outputs.sha }}
+    needs: source
+    if: needs.source.outputs.sha != ''
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ needs.source.outputs.sha }}
+          persist-credentials: false
+      - run: pipx install uv
+      - name: Check the landed commit
+        run: ./tests/check.sh

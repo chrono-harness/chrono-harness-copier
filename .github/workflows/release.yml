@@ -15,7 +15,8 @@ jobs:
   source:
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (github.event.workflow_run.event == 'push' && github.event.workflow_run.conclusion == 'success' &&
+      ((github.event.workflow_run.event == 'push' || (github.event.workflow_run.head_branch == 'dev' &&
+        (github.event.workflow_run.event == 'workflow_run' || github.event.workflow_run.event == 'workflow_dispatch'))) && github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-24.04
     outputs:
@@ -24,6 +25,7 @@ jobs:
       tag: ${{ steps.plan.outputs.tag }}
       preview: ${{ steps.plan.outputs.preview }}
       proof: ${{ steps.plan.outputs.proof }}
+      landing: ${{ steps.plan.outputs.landing }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
@@ -33,8 +35,8 @@ jobs:
         run: |
           set -euo pipefail
           directory=$(mktemp -d "$RUNNER_TEMP/release-tool.XXXXXXXX")
-          curl --fail --silent --show-error --location "https://github.com/chrono-harness/chrono-harness-host-release/releases/download/v0.1.0-alpha.30/chrono-host-release-linux-x86_64" -o "$directory/chrono-host-release"
-          (cd "$directory" && echo "9ad5c65299b7cddbe467bf1319a38f7cb905e342f916ea247e67380051150a05  chrono-host-release" | sha256sum --check --status)
+          curl --fail --silent --show-error --location "https://github.com/chrono-harness/chrono-harness-host-release/releases/download/v0.1.7-alpha.1/chrono-host-release-linux-x86_64" -o "$directory/chrono-host-release"
+          (cd "$directory" && echo "fb95ecfc5cbf9209a0aeabec84a0bb664159a99cf283c4ccd1bbaed547758c5f  chrono-host-release" | sha256sum --check --status)
           chmod 755 "$directory/chrono-host-release"
           echo "$directory" >> "$GITHUB_PATH"
 
@@ -56,7 +58,7 @@ jobs:
       contents: write
       actions: read
     concurrency:
-      group: publish-${{ needs.source.outputs.tag }}
+      group: publish-${{ needs.source.outputs.mode == 'preview' && needs.source.outputs.sha || needs.source.outputs.tag }}
       cancel-in-progress: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -67,8 +69,8 @@ jobs:
         run: |
           set -euo pipefail
           directory=$(mktemp -d "$RUNNER_TEMP/release-tool.XXXXXXXX")
-          curl --fail --silent --show-error --location "https://github.com/chrono-harness/chrono-harness-host-release/releases/download/v0.1.0-alpha.30/chrono-host-release-linux-x86_64" -o "$directory/chrono-host-release"
-          (cd "$directory" && echo "9ad5c65299b7cddbe467bf1319a38f7cb905e342f916ea247e67380051150a05  chrono-host-release" | sha256sum --check --status)
+          curl --fail --silent --show-error --location "https://github.com/chrono-harness/chrono-harness-host-release/releases/download/v0.1.7-alpha.1/chrono-host-release-linux-x86_64" -o "$directory/chrono-host-release"
+          (cd "$directory" && echo "fb95ecfc5cbf9209a0aeabec84a0bb664159a99cf283c4ccd1bbaed547758c5f  chrono-host-release" | sha256sum --check --status)
           chmod 755 "$directory/chrono-host-release"
           echo "$directory" >> "$GITHUB_PATH"
 
@@ -80,5 +82,6 @@ jobs:
           TAG: ${{ needs.source.outputs.tag }}
           PREVIEW: ${{ needs.source.outputs.preview }}
           PROOF: ${{ needs.source.outputs.proof }}
+          LANDING: ${{ needs.source.outputs.landing }}
           DIST: ${{ runner.temp }}/dist
         run: python3 .github/release/publish.py

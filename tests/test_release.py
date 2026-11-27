@@ -539,6 +539,97 @@ class ReleasePlan(ReleaseAdapterTest):
                 plan.plan(dict(config, consumer=consumer), repository, main, "workflow_run")
 
 
+class RepeatedLanding(unittest.TestCase):
+    def test_same_commit_reuses_the_published_preview_and_another_commit_does_not(self):
+        tag = "v1.2.3-alpha.20"
+        previous = "v1.2.3-alpha.17"
+        ref = {"ref": "refs/tags/" + previous, "object": {"type": "commit", "sha": sha}}
+        with patch.object(publish, "request", return_value=[ref]), \
+                patch.object(publish, "optional", return_value={"draft": False}) as release, \
+                patch.object(publish, "check_release") as check:
+            self.assertEqual(publish.published_landing_preview(tag, sha), previous)
+            check.assert_called_once_with({"draft": False}, previous, True, False, {})
+            release.return_value = None
+            with self.assertRaisesRegex(ValueError, "unfinished preview"):
+                publish.published_landing_preview(tag, sha)
+            ref["object"]["sha"] = "b" * 40
+            self.assertIsNone(publish.published_landing_preview(tag, sha))
+
+
+class LandingRun(unittest.TestCase):
+    def setUp(self):
+        fixture = Path(__file__).parent / "fixtures/landed-dependency.json"
+        data = json.loads(fixture.read_text())
+        self.repository = data["run"]["repository"]["full_name"]
+        self.sha = data["run"]["head_sha"]
+        self.run = {"id": 45916682140, "run_attempt": 1, "event": "workflow_dispatch",
+                    "path": ".github/workflows/copier.yml", "display_title": "CodeQL 45895050659/1",
+                    "head_sha": "bacdf785fd25dfa9f619a85dbd77159e29e5003c", "head_branch": "dev"}
+        self.routes = {f"actions/runs/45895050659/attempts/1": data["run"],
+                       f"commits/{self.sha}/pulls?per_page=100&page=1": data["associated"],
+                       "pulls/108": data["pull"], f"git/commits/{self.sha}": data["commit"]}
+        self.jobs = [{"id": 140237521534}]
+        self.ancestry = self.enterContext(patch.object(plan, "contains"))
+        self.enterContext(patch("landed_dependency.public_read", side_effect=lambda repo, path: self.routes[path]))
+        self.api = self.enterContext(patch.object(plan, "api",
+            side_effect=lambda path: self.routes[path.removeprefix(f"repos/{self.repository}/")]))
+        self.attempt_jobs = self.enterContext(patch.object(plan, "attempt_jobs", return_value=self.jobs))
+
+    def test_recovery_and_native_event_preserve_selected_commit_and_real_attempt(self):
+        for event_name in ("workflow_dispatch", "workflow_run"):
+            self.run["event"] = event_name
+            receipt, evidence = plan.landing_source(self.repository, self.run)
+            self.assertEqual(receipt, {"id": 45916682140, "attempt": 1, "event": event_name,
+                "codeql_run": 45895050659, "codeql_attempt": 1, "pr": 108, "sha": self.sha,
+                "base": "16ad34c8a6a733f10878dad8bb3d6591edaccf8c",
+                "head": "792d8e34eafcbfa0a2d404a5386ae876b51a0f16"})
+            self.assertEqual(evidence, {**{key: receipt[key] for key in
+                ("id", "attempt", "event", "codeql_run", "codeql_attempt")}, "jobs": self.jobs})
+            self.attempt_jobs.assert_called_with(self.repository, 45916682140, 1)
+            self.ancestry.assert_called_with(self.repository, self.run["head_sha"], "dev")
+
+    def test_stable_promotion_revalidates_the_published_attempt_and_both_parents(self):
+        receipt, evidence = plan.landing_source(self.repository, self.run)
+        release = {"body": plan.landing_notes(self.sha, receipt)}
+        self.routes["actions/runs/45916682140/attempts/1"] = self.run
+        check = {"kind": "copier", "check": {"file": "copier.yml", "dependency_landings": True}}
+        origin = plan.origin_for_preview(check, self.repository, self.sha, release)
+        self.assertEqual(origin, (self.run, {"landing": evidence}))
+        for field, value in (("base", "a" * 40), ("head", "b" * 40), ("event", "workflow_run"),
+                             ("codeql_attempt", 2), ("pr", 109)):
+            with self.subTest(field=field), self.assertRaises(ValueError):
+                plan.origin_for_preview(check, self.repository, self.sha,
+                    {"body": plan.landing_notes(self.sha, dict(receipt, **{field: value}))})
+        self.run["run_attempt"] = 2
+        with self.assertRaisesRegex(ValueError, "different preview attempt"):
+            plan.origin_for_preview(check, self.repository, self.sha, release)
+
+    def test_config_and_preview_are_selected_at_the_tested_commit(self):
+        wrapper = self.run["head_sha"]
+        repo = {"full_name": self.repository}
+        self.run.update(repository=repo, head_repository=repo, status="completed", conclusion="success")
+        publisher = {"kind": "copier", "check": {"file": "copier.yml", "dependency_landings": True}}
+        source = dict(publisher, version="0.1.48")
+        with patch.object(plan, "event_route", return_value="dev"), \
+                patch.object(plan, "config_at", side_effect=[publisher, source]) as configs, \
+                patch.object(plan, "plan", return_value={"mode":"preview"}) as planner:
+            result = plan.event_plan(self.repository, {"workflow_run": self.run}, "workflow_run", wrapper)
+        self.assertEqual(result["mode"], "preview")
+        self.assertEqual([call.args[1] for call in configs.call_args_list], [wrapper, self.sha])
+        self.assertEqual(planner.call_args.args[0], source)
+        self.assertEqual(planner.call_args.kwargs["receipt"]["sha"], self.sha)
+        self.assertEqual(planner.call_args.kwargs["evidence"]["jobs"], self.jobs)
+
+    def test_ordinary_codeql_completion_skips_and_attempt_mismatch_fails(self):
+        self.run["event"] = "workflow_run"
+        self.routes[f"commits/{self.sha}/pulls?per_page=100&page=1"] = []
+        self.assertEqual(plan.landing_source(self.repository, self.run), (None, None))
+        self.attempt_jobs.assert_not_called()
+        self.routes["actions/runs/45895050659/attempts/1"]["run_attempt"] = 2
+        with self.assertRaises(ValueError):
+            plan.landing_source(self.repository, self.run)
+
+
 class CopierPromotion(ReleaseAdapterTest):
     source = "chrono-harness/chrono-harness-copier"
     preview = "v0.1.0-alpha.15"
