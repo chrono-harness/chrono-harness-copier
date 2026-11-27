@@ -1,1 +1,1 @@
-../scaffold/.github/{% if release_plan.get("kind") == "copier" and release_plan.check.get("dependency_landings") %}landed_dependency.py{% endif %}
+../scaffold/.github/{% if check_landed_dependencies or release_plan.get("kind") == "copier" and release_plan.check.get("dependency_landings") %}landed_dependency.py{% endif %}

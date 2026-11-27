@@ -153,6 +153,11 @@ dependabot_auto_merge:
   default: true
   when: "{{ dependabot_updates | length > 0 }}"
   help: 本仓 Dependabot PR 通过开发分支的必需检查后自动合并？
+check_landed_dependencies:
+  type: bool
+  default: false
+  when: "{{ dependabot_updates and dependabot_auto_merge and dev_branch == 'dev' }}"
+  help: 为采用 chrono-harness 本地 DELTA 入口（./check.sh）的宿主，在依赖自动合并后按第一父提交运行落地检查。
 github_templates:
   type: bool
   help: 安装 GitHub Issue 表单及 PR 模板？
