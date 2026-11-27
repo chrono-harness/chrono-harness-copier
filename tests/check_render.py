@@ -25,6 +25,7 @@ assert (manual / dependabot).read_bytes() == (selected / dependabot).read_bytes(
 assert not (manual / auto_merge).exists()
 landing = Path(".github/workflows/check-landed-dependency.yml")
 assert (selected / landing).is_file() and not (full / landing).exists()
+assert (selected / ".github/landed_report.py").is_file() and not (full / ".github/landed_report.py").exists()
 assert (selected / ".github/landed_dependency.py").read_bytes() == Path(".github/landed_dependency.py").read_bytes()
 assert not (manual / landing).exists()
 settings = (selected / dependabot).read_text()
