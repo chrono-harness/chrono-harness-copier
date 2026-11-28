@@ -1,3 +1,4 @@
+{%- import 'render-tools.jinja' as render with context -%}
 {%- import 'tool-catalog.jinja' as tools with context -%}
 {%- set selected_tools = tools.selected_tools -%}
 # Resolve and verify the selected tools before task execution installs anything.
@@ -24,9 +25,9 @@ description = "Run the registered business check"
 run = {{ check_command | to_json }}
 {% endif %}
 
-{% if local_check_retention or native_check_keep_seconds %}
+{% if render.maintenance %}
 [tasks.harness-maintain-checks]
-{% if native_check_keep_seconds and local_check_retention %}
+{% if render.maintenance == 'both' %}
 description = "Maintain native check directories and registered reports"
 run = """
 native_status=0
@@ -34,7 +35,7 @@ chrono-host-bootstrap native-scratch maintain {{ native_check_keep_seconds }} >&
 chrono-harness retention --host-root . --request .chrono-harness/maintain-checks.json || exit $?
 exit "$native_status"
 """
-{% elif native_check_keep_seconds %}
+{% elif render.maintenance == 'native' %}
 description = "Maintain native check directories"
 run = "chrono-host-bootstrap native-scratch maintain {{ native_check_keep_seconds }}"
 {% else %}
@@ -42,7 +43,7 @@ description = "Maintain registered local check originals"
 run = "chrono-harness retention --host-root . --request .chrono-harness/maintain-checks.json"
 {% endif %}
 {% endif %}
-{% if features or generate_check or local_check_retention or native_check_keep_seconds %}
+{% if render.install %}
 [tasks.harness-setup]
 description = "Install this repository's selected tools"
 {% set install = 'sh .chrono-harness/install-tools.sh' %}

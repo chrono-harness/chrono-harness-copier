@@ -1,0 +1,23 @@
+{%- import 'render-selection.jinja' as policy -%}
+{%- set reports = not not local_check_retention -%}
+{%- set native = not not native_check_keep_seconds -%}
+{%- set install = policy.setup[not not features, not not generate_check, reports, native] -%}
+{%- set maintenance = policy.maintenance[reports, native] -%}
+{%- set feature_tools = namespace(commands=[]) -%}
+{%- for feature in features -%}
+    {%- set feature_tools.commands = feature_tools.commands + tool_dependencies[feature] -%}
+{%- endfor -%}
+{%- set selected = namespace(commands=[]) -%}
+{%- for command in (['chrono-harness', 'chrono-host-bootstrap'] + feature_tools.commands) | unique(case_sensitive=true) -%}
+    {%- if policy.include_tool[command in feature_tools.commands, reports and command == 'chrono-harness', native and command == 'chrono-host-bootstrap'] -%}
+        {%- set selected.commands = selected.commands + [command] -%}
+    {%- endif -%}
+{%- endfor -%}
+{%- set selected_tools = selected.commands -%}
+{%- set exact_tag = '^v[0-9]+[.][0-9]+[.][0-9]+(-[A-Za-z0-9-]+([.][A-Za-z0-9-]+)*)?\\Z' -%}
+{%- macro valid_channel(tag, allow_pinned) -%}
+    {%- if tag is string and policy.channel[allow_pinned, tag == 'pinned', tag in ('stable', 'preview'), not not (tag | regex_search(exact_tag))] -%}1{%- endif -%}
+{%- endmacro -%}
+{%- macro channel_for(command, overrides, default_channel) -%}
+    {{- overrides[command] if policy.use_override[(command in overrides,)] else default_channel -}}
+{%- endmacro -%}

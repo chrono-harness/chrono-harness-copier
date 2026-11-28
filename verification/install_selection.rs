@@ -3,9 +3,9 @@ use vstd::prelude::*;
 verus! {
 
 #[derive(Clone, Copy)]
-enum Selection { Disabled, Configured, Override }
+pub(crate) enum Selection { Disabled, Configured, Override }
 
-fn selection(disabled: bool, has_override: bool) -> (action: Selection)
+pub(crate) fn selection(disabled: bool, has_override: bool) -> (action: Selection)
     ensures (action is Disabled) == disabled,
         (action is Configured) == (!disabled && !has_override),
         (action is Override) == (!disabled && has_override),
@@ -77,9 +77,9 @@ fn receipt(verified: bool, dynamic: bool) -> (action: Receipt)
 }
 
 #[derive(Clone, Copy)]
-enum Override { Use, Unsafe, Invalid }
+pub(crate) enum Override { Use, Unsafe, Invalid }
 
-fn channel(named: bool, safe: bool, exact: bool) -> (out: Override)
+pub(crate) fn channel(named: bool, safe: bool, exact: bool) -> (out: Override)
     ensures (out is Use) == (named || (safe && exact)),
         (out is Unsafe) == (!named && !safe),
         (out is Invalid) == (!named && safe && !exact),

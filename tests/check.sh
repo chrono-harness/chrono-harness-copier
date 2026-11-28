@@ -34,6 +34,8 @@ mise exec -- verus --no-cheating --no-external-by-default --compile --edition=20
 diff -u .chrono-harness/install-policy.sh "$stage/install-policy.sh"
 "$stage/install-target" > "$stage/install-target.jinja"
 diff -u install-target.jinja "$stage/install-target.jinja"
+"$stage/install-target" --render-selection > "$stage/render-selection.jinja"
+diff -u render-selection.jinja "$stage/render-selection.jinja"
 copier copy --defaults --vcs-ref HEAD -d repository=chrono-harness/chrono-harness-copier "$PWD" "$stage/default"
 copier copy --defaults --vcs-ref HEAD -d 'features=[]' -d github_templates=false -d manage_roadmap=false . "$stage/empty"
 # Exercise the native update list in existing render cases.
@@ -142,6 +144,26 @@ copier copy --defaults --vcs-ref HEAD \
   -d 'tool_versions={"chrono-test-git":"v1.2.3","chrono-test-git-profile":"preview"}' . "$stage/install-channels"
 uv run --no-project --python ">=3.11" python tests/test_install.py "$stage/install-channels" "$stage/test-git"
 
+# Exercise the Copier validation path and retain the first reported error.
+reject_render() {
+  local message=$1
+  shift
+  if copier copy --defaults --vcs-ref HEAD "$@" . "$stage/rejected" >"$stage/rejected.log" 2>&1; then
+    echo "unexpectedly accepted Copier answers: $*" >&2
+    exit 1
+  fi
+  if ! grep -Fq "$message" "$stage/rejected.log"; then
+    cat "$stage/rejected.log" >&2
+    exit 1
+  fi
+}
+reject_render '请输入 owner/name' -d 'features=["pr"]' -d repository=bad -d tool_install_channels=bad
+reject_render '需要 pinned、stable、preview 或精确 v 版本标签' -d 'features=[]' -d tool_install_channels=bad -d 'tool_versions=[]'
+reject_render '需要工具命令名到精确标签的对象' -d 'features=[]' -d 'tool_versions=[]'
+reject_render '需要已选组织工具名和 stable、preview 或精确 v 版本标签' -d 'features=[]' -d 'tool_versions={"chrono-test-git-profile":"preview"}'
+reject_render '需要已选组织工具名和 stable、preview 或精确 v 版本标签' -d 'features=["test-git"]' -d 'tool_versions={"chrono-test-git":"pinned"}'
+
+
 # Exercise a real host that edits its guide and later changes its tool choices.
 (
   cd "$stage/default"
@@ -152,7 +174,7 @@ uv run --no-project --python ">=3.11" python tests/test_install.py "$stage/insta
     git -c user.name=Copier -c user.email=copier@example.invalid commit -qm 'Record local host inputs'
   }
   record_host
-  for choice in '[]' '["instructions"]'; do
+  for choice in '["test-git"]' '[]' '["instructions"]'; do
     copier update --defaults --vcs-ref HEAD \
       --answers-file .chrono-harness/template-answers.yml -d "features=$choice"
     echo "Verify tool choice $choice"
@@ -165,6 +187,12 @@ uv run --no-project --python ">=3.11" python tests/test_install.py "$stage/insta
     if [[ "$choice" = '[]' ]]; then
       test ! -f docs/licenses/trureturing-Apache-2.0.txt
       if grep -Fq '<!-- chrono-instructions:begin -->' CLAUDE.md; then exit 1; fi
+      test ! -e .chrono-harness/install-tools.sh
+      test ! -e .config/mise/conf.d/selected-chrono-harness.toml
+    elif [[ "$choice" = '["test-git"]' ]]; then
+      grep -Fq 'http:chrono-test-git-profile' .config/mise/conf.d/chrono-harness.toml
+      grep -Fq 'chrono-test-git-profile chrono-harness/chrono-harness-test-git pinned' .chrono-harness/install-tools.sh
+      test ! -e .chrono-harness/pr.json
     else
       test -f docs/licenses/trureturing-Apache-2.0.txt
       grep -Fxq '## job.wait' CLAUDE.md

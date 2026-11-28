@@ -125,7 +125,11 @@ repository:
   type: str
   default: ""
   help: GitHub 仓库 owner/name（选用 pr 时必填，其他仓库可以留空）
-  validator: "{% if ('pr' in features or repository) and not (repository | regex_search('^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$')) %}请输入 owner/name{% endif %}"
+  validator: >-
+    {%- import 'render-selection.jinja' as policy -%}
+    {%- if not policy.repository['pr' in features, not not repository, not not (repository | regex_search('^[A-Za-z0-9][A-Za-z0-9_.-]*/[A-Za-z0-9][A-Za-z0-9_.-]*$'))] -%}
+    请输入 owner/name
+    {%- endif -%}
 dev_branch:
   type: str
   default: dev
@@ -202,9 +206,8 @@ tool_install_channels:
   default: pinned
   help: 默认选用固定配方 pinned、最新正式版 stable、最新测试版 preview 或精确 v 标签。
   validator: >-
-    {{ '' if tool_install_channels in ('pinned', 'stable', 'preview')
-       or tool_install_channels | regex_search('^v[0-9]+[.][0-9]+[.][0-9]+(-[A-Za-z0-9-]+([.][A-Za-z0-9-]+)*)?\\Z')
-       else '需要 pinned、stable、preview 或精确 v 版本标签' }}
+    {%- import 'render-tools.jinja' as render with context -%}
+    {{ '' if render.valid_channel(tool_install_channels, true) else '需要 pinned、stable、preview 或精确 v 版本标签' }}
 tool_versions:
   type: json
   default: {}
@@ -212,9 +215,8 @@ tool_versions:
   validator: |
     {%- if tool_versions is not mapping -%}需要工具命令名到精确标签的对象
     {%- else -%}
-    {%- set selected = namespace(commands=['chrono-harness'] if local_check_retention else []) -%}
-    {%- if native_check_keep_seconds -%}{%- set selected.commands = selected.commands + ['chrono-host-bootstrap'] -%}{%- endif -%}
-    {%- for f in features -%}{%- set selected.commands = selected.commands + tool_dependencies[f] -%}{%- endfor -%}
+    {%- import 'render-selection.jinja' as policy -%}
+    {%- import 'render-tools.jinja' as render with context -%}
     {%- for command, tag in tool_versions.items() -%}
-    {%- if command not in selected.commands or not command.startswith('chrono-') or tag is not string or (tag not in ('stable', 'preview') and not (tag | regex_search('^v[0-9]+[.][0-9]+[.][0-9]+(-[A-Za-z0-9-]+([.][A-Za-z0-9-]+)*)?\\Z'))) -%}需要已选组织工具名和 stable、preview 或精确 v 版本标签
+    {%- if not policy.override[command in render.selected_tools, command is string and command.startswith('chrono-'), not not render.valid_channel(tag, false)] -%}需要已选组织工具名和 stable、preview 或精确 v 版本标签
     {%- endif -%}{%- endfor -%}{%- endif -%}
