@@ -11,7 +11,7 @@ host_release_artifact:
   type: yaml
   when: false
   default:
-    version: "0.1.11-alpha.1"
+    version: "0.1.11"
     linux_sha256: "ba53b8b7cba01e72f9befa5cf652eae47b55973d0c9ace64169007ab858d620d"
     macos_sha256: "5a76fa1d306154b9842926ca43754e84cf330a84891812b175ea647616ee26f8"
 install_resolver_artifact:
