@@ -1,4 +1,5 @@
 #!/bin/sh
+{%- import 'render-tools.jinja' as render with context -%}
 {%- import 'tool-catalog.jinja' as tools with context %}
 # Run from the checkout root. Publish a complete, verified mise selection by rename.
 set -eu
@@ -101,7 +102,7 @@ while read -r command repository default_selector; do
     printf '%s %s\n' "$command" "$expected" >> "$work/checksums"
 done <<'TOOLS'
 {% for command in commands -%}
-{{ command }} {{ tools.catalog[command][0] }} {{ tool_versions.get(command, tool_install_channels) }}
+{{ command }} {{ tools.catalog[command][0] }} {{ render.channel_for(command, tool_versions, tool_install_channels) }}
 {% endfor -%}
 TOOLS
 # An explicit mise argument installs the requested release even when a matching prerelease is cached.

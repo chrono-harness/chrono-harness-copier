@@ -1,4 +1,5 @@
 mod install_selection;
+mod render_selection;
 use vstd::prelude::*;
 
 verus! {
@@ -103,9 +104,10 @@ fn boundary_expectations() {
 
 #[verifier::external]
 fn main() {
-    if std::env::args().nth(1).as_deref() == Some("--selection") {
-        install_selection::emit();
-        return;
+    match std::env::args().nth(1).as_deref() {
+        Some("--selection") => return install_selection::emit(),
+        Some("--render-selection") => return render_selection::emit(),
+        _ => (),
     }
     boundary_expectations();
     println!("# Generated from verification/install_target.rs during Copier development.");
