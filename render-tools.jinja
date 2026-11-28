@@ -8,7 +8,7 @@
     {%- set feature_tools.commands = feature_tools.commands + tool_dependencies[feature] -%}
 {%- endfor -%}
 {%- set selected = namespace(commands=[]) -%}
-{%- for command in (feature_tools.commands + ['chrono-harness', 'chrono-host-bootstrap']) | unique(case_sensitive=true) -%}
+{%- for command in (['chrono-harness', 'chrono-host-bootstrap'] + feature_tools.commands) | unique(case_sensitive=true) -%}
     {%- if policy.include_tool[command in feature_tools.commands, reports and command == 'chrono-harness', native and command == 'chrono-host-bootstrap'] -%}
         {%- set selected.commands = selected.commands + [command] -%}
     {%- endif -%}

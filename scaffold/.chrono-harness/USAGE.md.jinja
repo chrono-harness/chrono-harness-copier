@@ -1,3 +1,4 @@
+{%- import 'render-tools.jinja' as render with context -%}
 # {{ repository ~ ' 工具入口' if repository else '本仓工具入口' }}
 
 组件的用途、开发仓库和示例见 [Chrono Harness 用户与开发者入口](https://github.com/chrono-harness/chrono-harness-main)。
@@ -6,7 +7,7 @@
 {% if github_templates or 'pr' in features %}
 [组织协作规范](https://github.com/chrono-harness/chrono-harness-instructions/blob/dev/docs/contributing.md)
 {% endif %}
-{% if features or generate_check or local_check_retention or native_check_keep_seconds %}
+{% if render.install %}
 首次检出运行 `mise trust` 和 `mise run harness-setup`。本仓默认安装策略为 `{{ tool_install_channels }}`。固定配方读取 [.config/mise/conf.d/chrono-harness.toml](../.config/mise/conf.d/chrono-harness.toml)。模板答案 `tool_versions` 可以为每个工具选择 stable、preview 或精确标签。临时运行 `CHRONO_TOOL_CHANNEL=preview mise run harness-setup` 会为已选组织工具安装各自最新测试版，也可以把 `preview` 换成 `stable` 或精确的 `v` 标签。再次运行普通安装即可恢复本仓选择。CI 使用 `sh .chrono-harness/install-tools.sh`，支持相同设置。各分支、标签和 detached HEAD 使用相同规则。{% endif %}
 {% if 'instructions' in features %}
 刷新根指南使用 `mise run harness-setup`。`.chrono-harness/rules.json` 可用 `all` 配合 `exclude`，或 `only` 配合 `include` 逐项选择规则 ID，`off` 关闭继承。
@@ -27,7 +28,7 @@
 {% if native_check_keep_seconds %}
 原生检查入口用 `chrono-host-bootstrap native-scratch run PROGRAM [ARG ...]` 启动编译或测试。子程序从 `CHRONO_NATIVE_SCRATCH` 取得本次专用目录。成功且读者退出后即可回收；失败或中断的目录保留 {{ native_check_keep_seconds }} 秒，仍持租约时继续保全。需要留存的诊断应在窗口内转存并核对摘要。
 {% endif %}
-{% if native_check_keep_seconds or local_check_retention %}
+{% if render.maintenance %}
 运行 `mise run harness-maintain-checks` 可执行一轮本仓已选的维护。宿主已将此命令接入事件维护服务时，业务事件唤醒服务，由持有协调者独占租约的进程调用它。模板只生成这条命令。保留期届满且读者已释放的产物，由下一次成功处理该目录的维护轮次回收。长期没有事件或显式维护时，已到期的产物会继续占用磁盘。
 {% endif %}
 {% if generate_check %}

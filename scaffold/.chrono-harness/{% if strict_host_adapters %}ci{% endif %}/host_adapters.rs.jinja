@@ -99,7 +99,7 @@ pub fn installed_config() -> (s: &'static str) {
 }
 
 {% endif %}{% if has_installer -%}
-{% set script %}{% include 'scaffold/.chrono-harness/{% import 'render-tools.jinja' as render with context %}{% if render.install %}install-tools.sh{% endif %}.jinja' %}{% endset -%}
+{% set script %}{% include "scaffold/.chrono-harness/{% import 'render-tools.jinja' as render with context %}{% if render.install %}install-tools.sh{% endif %}.jinja" %}{% endset -%}
 {% set install_hash = script | hash('sha256') -%}
 pub fn deployed_tool_installer() -> (source: &'static str) {
     include_str!("../install-tools.sh")

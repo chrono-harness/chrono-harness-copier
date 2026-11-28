@@ -1,5 +1,5 @@
 {%- import 'render-tools.jinja' as render with context -%}
-{%- set selected_tools = render.selected_tools -%}
+{%- set selected_tools = render.selected_tools | unique | list -%}
 {%- set catalog = {
     'chrono-cache': ('chrono-harness/chrono-harness-cache', '0.1.0-alpha.3', '6757e22475c29f904cb10652e143d2ac4fe2ddb2911a4458bdf4d5de79090e5e', '2b71746930f337d7ae528c29d40f4ce80ce20eed38e534423ffba5fb14ddad19'),
     'chrono-ci': ('chrono-harness/chrono-harness-ci', '0.1.0-alpha.5', '5bce03f8f201743598c3a453c3660cd89d19e8c8b31661240ea58a02ac480fe5', '869c4351395440a855cade9f7cae662e95656611f04e261e24f4ed997b47b71d'),
