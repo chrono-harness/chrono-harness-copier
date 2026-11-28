@@ -26,6 +26,12 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
+      - uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78
+        with:
+          version: 2026.11.12
+          cache: false
+          install: false
+      - run: mise install rust http:verus
       - run: pipx install uv
       - run: ./tests/check.sh
   source:
@@ -52,6 +58,12 @@ jobs:
         with:
           ref: ${{ needs.source.outputs.sha }}
           persist-credentials: false
+      - uses: jdx/mise-action@924e7c586e33d7d4bae9c14e26c5d22e2beb6e78
+        with:
+          version: 2026.11.12
+          cache: false
+          install: false
+      - run: mise install rust http:verus
       - run: pipx install uv
       - name: Check the landed commit
         run: ./tests/check.sh
