@@ -22,7 +22,7 @@ def external(name, args):
     if name == "git":
         raise AssertionError("install must not read the consumer's Git branch")
     elif name == "uname":
-        print({"-s": "Linux", "-m": "x86_64"}[args[0]])
+        print(({"-s": "Darwin", "-m": "arm64"} if os.environ.get("TEST_MAC") else {"-s": "Linux", "-m": "x86_64"})[args[0]])
     elif name == "curl":
         output = Path(args[args.index("-o") + 1])
         if "-D" not in args:
@@ -52,13 +52,14 @@ def external(name, args):
             legacy = Path.cwd() / ".config/mise/conf.d/zz-chrono-harness-resolved.toml"
             assert args[0] == "-f"
             if name == "mv":
-                assert len(args) == 3 and target == selection and Path(args[1]).name == "versions.toml"
+                assert len(args) == 3 and ((target == selection and Path(args[1]).name == "versions.toml")
+                    or (target == legacy and Path(args[1]).name == "mise.toml"))
             else:
                 assert len(args) == 2 and target in (selection / "versions.toml", legacy)
             if os.environ.get("FAULT") == name:
                 return 17
             if name == "mv":
-                Path(args[1]).replace(selection / "versions.toml")
+                Path(args[1]).replace(legacy if target == legacy else selection / "versions.toml")
             else:
                 target.unlink(missing_ok=True)
     elif name == "sha256sum":
@@ -74,7 +75,7 @@ def external(name, args):
             states = {NEXT.encode(): "next", DONE.encode(): "done"}
             if path.read_bytes() not in states:
                 return 2
-            print(states[path.read_bytes()])
+            print("unknown" if os.environ.get("FAULT") == "page-state" else states[path.read_bytes()])
             return 0
         operation, flag, command, repo, selector, linux, mac, *pages = args
         assert (operation, flag, repo) == ("resolve-install-v1", "--mise-tool", "chrono-harness/chrono-harness-test-git")
@@ -93,10 +94,10 @@ def external(name, args):
         else:
             assert re.fullmatch(r"v\d+\.\d+\.\d+(?:-[A-Za-z0-9.-]+)?", selector)
             version = selector[1:]
-        digest = hashlib.sha256(command.encode()).hexdigest()
         print(f'[tools."http:{command}"]\nversion="{version}"\nbin="{command}"')
         print(f'[tools."http:{command}".platforms]')
         for platform, asset in (("linux-x64", linux), ("macos-arm64", mac)):
+            digest = hashlib.sha256((command + ("-mac" if platform == "macos-arm64" else "")).encode()).hexdigest()
             print(f'{platform} = {{url="https://github.com/{repo}/releases/download/v{version}/{asset}",checksum="sha256:{digest}"}}')
     elif name == "mise":
         if args == ["settings", "get", "disable_tools"]:
@@ -116,22 +117,22 @@ def external(name, args):
             else:
                 assert args[2] == "which"
                 payload = state / args[3]
-                payload.write_text("wrong bytes" if os.environ.get("FAULT") == "cache" else args[3])
+                payload.write_text("wrong bytes" if os.environ.get("FAULT") == "cache" else args[3] + ("-mac" if os.environ.get("TEST_MAC") else ""))
                 print(payload)
     else:
         raise AssertionError(name)
     return 0
 
 
-def exercise(host, state, *, pinned):
+def exercise(host, state, *, pinned, self_host=False):
     mock = state / "mock"
     mock.write_text("#!" + sys.executable + "\n" + Path(__file__).read_text())
     mock.chmod(0o700)
     for name in ("git", "uname", "curl", "sha256sum", "mise", "mv", "rm"):
         (state / name).symlink_to(mock.name)
     installer = host / ".chrono-harness/install-tools.sh"
-    seed = re.search(r"Linux-x86_64\).*?seed_sha=([a-f0-9]{64})", installer.read_text())[1]
-    env = dict(PATH=str(state) + os.pathsep + os.defpath, INSTALL_FIXTURE=str(state), SEED_DIGEST=seed,
+    seed = re.search(r'select_platform "\$\(uname -s\)-\$\(uname -m\)" ([a-f0-9]{64}) ([a-f0-9]{64})', installer.read_text())
+    env = dict(PATH=str(state) + os.pathsep + os.defpath, INSTALL_FIXTURE=str(state), SEED_DIGEST=seed[1],
                PREVIEW="1.0.0-alpha.1")
     receipt = host / ".chrono-harness/state/tool-selection/versions.toml"
     receipt.parent.mkdir(parents=True)
@@ -150,6 +151,27 @@ def exercise(host, state, *, pinned):
     def versions():
         tools = tomllib.loads(receipt.read_text()) if receipt.exists() else {}
         return {"http:" + name: values[0] for name, values in tools.items()}
+
+    if self_host:
+        source = host / ".config/mise/conf.d/chrono-harness.toml"
+        resolved = source.with_name("zz-chrono-harness-resolved.toml")
+        commands = [key for key in tomllib.loads(source.read_text())["tools"] if key.startswith("http:chrono-")]
+        tool = "http:chrono-test-git"
+        env["DISABLED"] = json.dumps([key for key in commands if key != tool])
+        run(CHRONO_TOOL_CHANNEL="v2.4.1", TEST_MAC="1", SEED_DIGEST=seed[2])
+        initial = resolved.read_bytes()
+        selected = tomllib.loads(initial.decode())["tools"][tool]
+        assert selected["version"] == "2.4.1"
+        for platform, payload in [("macos-arm64", b"chrono-test-git-mac"), ("linux-x64", b"chrono-test-git")]:
+            assert selected["platforms"][platform]["checksum"] == "sha256:" + hashlib.sha256(payload).hexdigest()
+        for fault, status in [("page-state", 1), ("cache", 1), ("install", 9), ("mv", 17)]:
+            run(status, CHRONO_TOOL_CHANNEL="preview", FAULT=fault)
+            assert resolved.read_bytes() == initial
+        run(CHRONO_TOOL_CHANNEL="stable")
+        assert tomllib.loads(resolved.read_text())["tools"][tool]["version"] == "1.0.0"
+        calls = run(DISABLED=json.dumps(commands), CHRONO_TOOL_CHANNEL="preview")
+        assert not resolved.exists() and not any(call[0] == "curl" for call in calls)
+        return
 
     state_dir = receipt.parent.parent
     legacy = host / ".config/mise/conf.d/zz-chrono-harness-resolved.toml"
@@ -255,6 +277,10 @@ def exercise(host, state, *, pinned):
     assert set(versions().values()) == {"1.1.0"}
     run(CHRONO_TOOL_CHANNEL="v2.4.1", PREVIEW="9.0.0-alpha.2", STABLE="9.0.0")
     assert set(versions().values()) == {"2.4.1"}
+    run(CHRONO_TOOL_CHANNEL="v2.4.1", TEST_MAC="1", SEED_DIGEST=seed[2])
+    both = tomllib.loads(receipt.read_text())["chrono-test-git"]
+    assert both == ["2.4.1", "sha256:" + hashlib.sha256(b"chrono-test-git").hexdigest(),
+                    "sha256:" + hashlib.sha256(b"chrono-test-git-mac").hexdigest()]
     before = receipt.read_bytes()
     extra = receipt.with_name("..dangling")
     extra.symlink_to(state / "uncreated")
@@ -281,3 +307,11 @@ if __name__ == "__main__":
     for host, pinned in ((sys.argv[1], False), (sys.argv[2], True)):
         with tempfile.TemporaryDirectory() as work:
             exercise(Path(host).resolve(), Path(work), pinned=pinned)
+
+    with tempfile.TemporaryDirectory() as work:
+        area = Path(work)
+        host = area / "copier"
+        for rel in [".chrono-harness/install-tools.sh", ".chrono-harness/install-policy.sh", ".config/mise/conf.d/chrono-harness.toml"]:
+            (host / rel).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(Path.cwd() / rel, host / rel)
+        exercise(host, area, pinned=False, self_host=True)

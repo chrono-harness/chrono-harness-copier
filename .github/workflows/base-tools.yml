@@ -1,9 +1,9 @@
 name: Install base tools
 on:
   push:
-    paths: [.chrono-harness/install-tools.sh, .config/mise/conf.d/chrono-harness.toml, .github/workflows/base-tools.yml]
+    paths: [.chrono-harness/install-tools.sh, .chrono-harness/install-policy.sh, .config/mise/conf.d/chrono-harness.toml, .github/workflows/base-tools.yml]
   pull_request:
-    paths: [.chrono-harness/install-tools.sh, .config/mise/conf.d/chrono-harness.toml, .github/workflows/base-tools.yml]
+    paths: [.chrono-harness/install-tools.sh, .chrono-harness/install-policy.sh, .config/mise/conf.d/chrono-harness.toml, .github/workflows/base-tools.yml]
   workflow_dispatch:
 permissions:
   contents: read
