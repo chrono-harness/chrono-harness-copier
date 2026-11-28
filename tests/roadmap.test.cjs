@@ -52,6 +52,8 @@ test('new work, release publication, closing and reopening reconcile against cur
   const github = {rest: {issues, repos: {listReleases: () => releases}}, paginate: async (fn, args) => [...fn(args)]}
   const defaults = {version: '1.2.0'}
   const run = (selected, numbers, state, plan = defaults, version, destination) => {
+    const wrong = plan?.version_policy === 'next_patch' && plan.kind !== 'copier'
+    reply({operation: 'rolling-plan', plan}, Boolean(version), wrong ? new Error('next_patch requires a Copier source product') : undefined)
     if (version) {
       const tags = releases.map(({tag_name, draft, prerelease, published_at}) =>
         JSON.parse(JSON.stringify({tag_name, draft, prerelease, published_at})))
@@ -63,16 +65,11 @@ test('new work, release publication, closing and reopening reconcile against cur
       const titles = milestones.map(m => m.title)
       const tags = releases.map(({tag_name, draft, prerelease, published_at}) =>
         JSON.parse(JSON.stringify({tag_name, draft, prerelease, published_at})))
-      const returnedTitles = new Set(titles)
-      if (target) returnedTitles.add('v' + target)
-      const expected = Object.fromEntries([...returnedTitles].map(title => [title, {
-        final: title === 'v1.2.0' && selected.includes(2) ? 2 : null,
-        preview: title === 'v1.2.0' && selected.includes(0) ? 0 : null,
-      }]))
-      reply({operation: 'release-selection', releases: tags, target: target ? 'v' + target : null, milestones: titles}, {
-        tag: selected.length ? releases[selected[selected.length - 1]].tag_name : null,
-        milestones: expected, destination,
-      })
+      const title = target ? 'v' + target : null
+      const ensure = [...new Set([title, selected.length ? 'v1.2.0' : null].filter(Boolean))]
+      const refresh = selected.length ? {'v1.2.0': {final: selected.includes(2) ? 2 : null, preview: 0}} : {}
+      reply({operation: 'release-selection', reconcile: true, releases: tags, target: title, milestones: titles},
+        {ensure, refresh, destination})
     }
     if (numbers !== null) {
       const rows = issues.listForRepo().map(({number, state, pull_request, milestone}) =>
@@ -83,9 +80,10 @@ test('new work, release publication, closing and reopening reconcile against cur
       const milestone = milestones.find(m => m.title === 'v1.2.0')
       const lines = ['测试版 [v1.2.0-alpha.1](https://example.org/preview)']
       if (state.final) lines.push('正式版 [v1.2.0](https://example.org/stable)')
-      reply({operation: 'release-block', milestone: milestone.number, original: milestone.description, lines},
-        state.final ? '原样交还的正式版正文' : '保留宿主计划。 v1.2.0-alpha.1', state.error)
-      if (!state.error) reply({operation: 'milestone', final_release: state.final, open_issues: state.open}, state.result)
+      const description = state.final ? '原样交还的正式版正文' : '保留宿主计划。 v1.2.0-alpha.1'
+      reply({operation: 'milestone-update', milestone: milestone.number, original: milestone.description,
+        lines, state: milestone.state, final_release: state.final, open_issues: state.open ?? 0},
+        state.unchanged ? null : {description, state: state.result}, state.error)
     }
     return sync(github, {repo: {owner: 'a', repo: 'b'}, payload: {}}, plan)
   }
@@ -115,7 +113,7 @@ test('new work, release publication, closing and reopening reconcile against cur
   await run([0, 2], [], {final:true, open:0, result:'closed'})
   assert.equal(target.state, 'closed')
   writes.length = 0
-  await run([0, 2], [], {final:true, open:0, result:'closed'})
+  await run([0, 2], [], {final:true, open:0, result:'closed', unchanged:true})
   assert.deepEqual(writes, [])
   items[2].state = 'open'
   await run([0, 2], [], {final:true, open:1, result:'open'})
@@ -134,10 +132,11 @@ test('new work, release publication, closing and reopening reconcile against cur
   target.description = '<!-- chrono-harness release -->未完的原文'
   writes.length = 0
   const error = new Error('Incomplete release block in milestone ' + target.number)
-  await assert.rejects(run([0, 2], [], {final:true, error}), error)
+  await assert.rejects(run([0, 2], [], {final:true, error, open:1}), error)
   assert.deepEqual(writes, [])
   assert.equal(target.description, '<!-- chrono-harness release -->未完的原文')
   await assert.rejects(run([0, 2], null, null, {...rolling, kind: 'binary'}), /Copier/)
+  reply({operation: 'rolling-plan', plan: {version: 'not-a-version'}}, null, new Error('Expected version'))
   await assert.rejects(sync(github, {}, {version: 'not-a-version'}), /Expected version/)
 })
 
@@ -163,6 +162,11 @@ test('a failed publication owns one issue and its successful retry closes it', a
     if (action !== null) {
       const rows = items.map(({number, state, user, body}) => ({number, state, user, body}))
       reply({operation: 'release-issue', ...result, run_id: 123, issues: rows}, {action, issue})
+    }
+    if (action === 'close') {
+      const original = items.find(item => item.number === issue).body
+      const recovery = `同次运行已恢复。[成功的第 ${run.run_attempt} 次尝试](${run.html_url}/attempts/${run.run_attempt})`
+      reply({operation: 'recovery-body', original, recovery}, original + '\n\n' + recovery)
     }
     return sync.releaseIssue({rest, paginate: async fn => [...fn()]},
       {repo: {owner: 'a', repo: 'b'}, payload: {workflow_run: {id: 123}}})
@@ -191,8 +195,9 @@ test('selection output fits when the repository has many unreleased milestones',
   const reply = mockRoadmap(t)
   const milestones = Array.from({length: 100}, (_, i) => ({title: 'v1.0.' + i}))
   const titles = milestones.map(m => m.title)
-  reply({operation: 'release-selection', releases: [], target: null, milestones: titles}, {
-    tag: null, milestones: Object.fromEntries(titles.map(title => [title, {final: null, preview: null}])),
+  reply({operation: 'rolling-plan', plan: null}, false)
+  reply({operation: 'release-selection', reconcile: true, releases: [], target: null, milestones: titles}, {
+    ensure: [], refresh: {}, destination: 'Backlog',
   })
   reply({operation: 'unassigned', issues: []}, [])
   const issues = {listMilestones: () => milestones, listForRepo: () => []}
@@ -202,7 +207,8 @@ test('selection output fits when the repository has many unreleased milestones',
 
 test('a failed decision aborts before any GitHub write', async t => {
   const reply = mockRoadmap(t)
-  reply({operation: 'release-selection', releases: [], target: null, milestones: []}, null, new Error('tool exited 2'))
+  reply({operation: 'rolling-plan', plan: null}, false)
+  reply({operation: 'release-selection', reconcile: true, releases: [], target: null, milestones: []}, null, new Error('tool exited 2'))
   const github = {rest:{issues:{listMilestones: () => []}, repos:{listReleases: () => []}}, paginate: fn => fn()}
   await assert.rejects(sync(github, {repo:{}, payload:{}}, null), /tool exited 2/)
 })
@@ -239,12 +245,16 @@ test('a stale release notification uses the latest attempt and preserves GitHub 
   function decide(action) {
     reply({operation: 'release-run', ...result}, true)
     reply({operation: 'release-issue', ...result, run_id: 123, issues: [item]}, {action, issue: 17})
+    if (action === 'close') {
+      const recovery = '同次运行已恢复。[成功的第 2 次尝试](https://example.org/runs/123/attempts/2)'
+      reply({operation: 'recovery-body', original: item.body, recovery}, '核定的恢复正文')
+    }
     return sync.releaseIssue(github, context)
   }
   await assert.rejects(decide('unknown'), /Unknown roadmap issue action: unknown/)
   assert.deepEqual(updates, [])
   await assert.rejects(decide('close'), e => e === error)
   assert.deepEqual(updates, [{...repo, issue_number: 17, state: 'closed',
-    body: item.body + '\n\n同次运行已恢复。[成功的第 2 次尝试](https://example.org/runs/123/attempts/2)'}])
+    body: '核定的恢复正文'}])
   assert.equal(item.state, 'open')
 })
