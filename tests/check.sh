@@ -30,6 +30,8 @@ fi
 # its output to the fragment the actual render consumes.
 mise exec -- verus --no-cheating --no-external-by-default --compile --edition=2021 \
   -o "$stage/install-target" verification/install_target.rs
+"$stage/install-target" --selection > "$stage/install-policy.sh"
+diff -u .chrono-harness/install-policy.sh "$stage/install-policy.sh"
 "$stage/install-target" > "$stage/install-target.jinja"
 diff -u install-target.jinja "$stage/install-target.jinja"
 copier copy --defaults --vcs-ref HEAD -d repository=chrono-harness/chrono-harness-copier "$PWD" "$stage/default"

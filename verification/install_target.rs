@@ -1,3 +1,4 @@
+mod install_selection;
 use vstd::prelude::*;
 
 verus! {
@@ -102,6 +103,10 @@ fn boundary_expectations() {
 
 #[verifier::external]
 fn main() {
+    if std::env::args().nth(1).as_deref() == Some("--selection") {
+        install_selection::emit();
+        return;
+    }
     boundary_expectations();
     println!("# Generated from verification/install_target.rs during Copier development.");
     print!(r#"validate_installation_path() {{

@@ -7,24 +7,13 @@ set -eu
 exec mise install
 {% else -%}
 fail() { echo "$*" >&2; exit 1; }
-# Explicit user input applies to every selected organization tool.
-if [ "${CHRONO_TOOL_CHANNEL+x}" = x ]; then
-    case "$CHRONO_TOOL_CHANNEL" in
-        stable|preview) ;;
-        *[!A-Za-z0-9.-]*|'') fail 'Invalid CHRONO_TOOL_CHANNEL.' ;;
-        *) printf '%s\n' "$CHRONO_TOOL_CHANNEL" | grep -Eq '^v[0-9]+[.][0-9]+[.][0-9]+(-[A-Za-z0-9-]+([.][A-Za-z0-9-]+)*)?$' ||
-               fail 'CHRONO_TOOL_CHANNEL expects stable, preview or an exact v tag.' ;;
-    esac
-fi
-case "$(uname -s)-$(uname -m)" in
-    Linux-x86_64) platform=linux-x64; asset=linux-x86_64; seed_sha={{ install_resolver_artifact.linux_sha256 }} ;;
-    Darwin-arm64) platform=macos-arm64; asset=macos-aarch64; seed_sha={{ install_resolver_artifact.macos_sha256 }} ;;
-    *) fail 'Unsupported installation platform.' ;;
-esac
+{% include ".chrono-harness/install-policy.sh" %}
+if [ "${CHRONO_TOOL_CHANNEL+x}" = x ]; then validate_override "$CHRONO_TOOL_CHANNEL"; fi
+select_platform "$(uname -s)-$(uname -m)" {{ install_resolver_artifact.linux_sha256 }} {{ install_resolver_artifact.macos_sha256 }}
 verify() {
     if command -v sha256sum >/dev/null 2>&1; then digest=$(sha256sum < "$1")
     else digest=$(shasum -a 256 < "$1"); fi
-    test "${digest%% *}" = "$2" || fail "SHA-256 mismatch for $1"
+    accept_checksum "${digest%% *}" "$2" "$1"
 }
 config_dir=$PWD/.config/mise/conf.d
 work=$(mktemp -d "$config_dir/.chrono-install.XXXXXXXX")
@@ -38,9 +27,6 @@ trap 'exit 1' HUP INT TERM
 manifest=$work/mise.toml
 : > "$manifest"
 disabled=$(mise settings get disable_tools)
-enabled() {
-    case "$disabled" in *\"http:$1\"*) return 1 ;; *) return 0 ;; esac
-}
 legacy=$config_dir/zz-chrono-harness-resolved.toml
 projection=$config_dir/selected-chrono-harness.toml
 state=$PWD/.chrono-harness/state
@@ -87,11 +73,7 @@ AUTH
                 exit "$fetch_status"
             fi
             state=$("$seed" resolve-install-v1 --page-state "$pages/$file.headers")
-            case "$state" in
-                next) page=$((page + 1)) ;;
-                done) break ;;
-                *) fail "Unexpected release page state: $state" ;;
-            esac
+            if more_release_pages "$state"; then page=$((page + 1)); else break; fi
         done
     fi
     "$seed" resolve-install-v1 --mise-tool "$command" "$repository" "$selector" \
@@ -101,9 +83,8 @@ AUTH
 set --
 : > "$work/checksums"
 while read -r command repository default_selector; do
-    enabled "$command" || continue
-    selector=${CHRONO_TOOL_CHANNEL-$default_selector}
-    if [ "$selector" = pinned ]; then
+    select_tool "$command" "$default_selector" || continue
+    if [ "$dynamic" = 0 ]; then
         source=$config_dir/chrono-harness.toml
     else
         resolve_dynamic
@@ -111,11 +92,9 @@ while read -r command repository default_selector; do
     fi
     version=$(mise config get --file "$source" "tools.\"http:$command\".version")
     expected=$(mise config get --file "$source" "tools.\"http:$command\".platforms.$platform.checksum")
-    if [ "$selector" != pinned ]; then
-        case $platform in
-            linux-x64) linux=$expected; macos=$(mise config get --file "$source" "tools.\"http:$command\".platforms.macos-arm64.checksum") ;;
-            macos-arm64) macos=$expected; linux=$(mise config get --file "$source" "tools.\"http:$command\".platforms.linux-x64.checksum") ;;
-        esac
+    if [ "$dynamic" = 1 ]; then
+        other=$(mise config get --file "$source" "tools.\"http:$command\".platforms.$other_platform.checksum")
+        order_checksums "$platform" "$expected" "$other"
         printf '%s = ["%s", "%s", "%s"]\n' "$command" "$version" "$linux" "$macos" >> "$data"
     fi
     set -- "$@" "http:$command@$version"
@@ -137,9 +116,7 @@ validate_target
 if [ -s "$data" ]; then
     mkdir -p "$selection"
     validate_target
-    mv -f "$data" "$selection/"
-else
-    rm -f "$resolved"
 fi
+publish_selection "$data" "$selection/" "$resolved"
 rm -f "$legacy"
 {% endif -%}
