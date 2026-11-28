@@ -26,6 +26,12 @@ else
   stage=$(mktemp -d "$stage_parent/copier-check.XXXXXXXX")
   trap 'rm -rf -- "$stage"' EXIT
 fi
+# Prove and compile the entire decision crate with the pinned mise tools, then compare
+# its output to the fragment the actual render consumes.
+mise exec -- verus --no-cheating --no-external-by-default --compile --edition=2021 \
+  -o "$stage/install-target" verification/install_target.rs
+"$stage/install-target" > "$stage/install-target.jinja"
+diff -u install-target.jinja "$stage/install-target.jinja"
 copier copy --defaults --vcs-ref HEAD -d repository=chrono-harness/chrono-harness-copier "$PWD" "$stage/default"
 copier copy --defaults --vcs-ref HEAD -d 'features=[]' -d github_templates=false -d manage_roadmap=false . "$stage/empty"
 # Exercise the native update list in existing render cases.

@@ -137,17 +137,43 @@ def exercise(host, state, *, pinned):
     receipt.parent.mkdir(parents=True)
     assert not receipt.is_symlink() and not receipt.exists()
 
-    def run(status=0, **options):
+    def run(status=0, *, diagnostic=None, **options):
         (state / "calls").write_text("")
         result = subprocess.run(["/bin/sh", str(installer)], cwd=host, env={**env, **options},
                                 capture_output=True, text=True)
         assert result.returncode == status, (result.returncode, result.stderr)
+        if diagnostic is not None:
+            assert result.stderr == diagnostic + "\n", (diagnostic, result.stderr)
         assert not list((host / ".config/mise/conf.d").glob(".chrono-install.*"))
         return [json.loads(line) for line in (state / "calls").read_text().splitlines()]
 
     def versions():
         tools = tomllib.loads(receipt.read_text()) if receipt.exists() else {}
         return {"http:" + name: values[0] for name, values in tools.items()}
+
+    state_dir = receipt.parent.parent
+    legacy = host / ".config/mise/conf.d/zz-chrono-harness-resolved.toml"
+    # Reject simultaneous invalid targets in the original order, without downloading.
+    receipt.parent.rmdir()
+    state_dir.rmdir()
+    state_dir.symlink_to(state / "uncreated")
+    legacy.mkdir()
+    directory_error = "Expected an installation state directory: "
+    file_error = "Expected a regular installation selection: "
+    def reject(diagnostic):
+        calls = run(1, diagnostic=diagnostic, CHRONO_TOOL_CHANNEL="stable")
+        assert not any(call[0] in ("curl", "chrono-host-release") for call in calls)
+
+    reject(directory_error + str(state_dir))
+    assert state_dir.is_symlink() and not state_dir.exists()
+    state_dir.unlink()
+    receipt.parent.mkdir(parents=True)
+    receipt.symlink_to(state / "uncreated")
+    reject(file_error + str(legacy))
+    assert legacy.is_dir() and receipt.is_symlink()
+    legacy.rmdir()
+    reject(file_error + str(receipt))
+    receipt.unlink()
 
     # A directory is a destination operand to mv. Reject it before staging or publishing.
     receipt.mkdir()
@@ -196,7 +222,6 @@ def exercise(host, state, *, pinned):
         assert base.read_text() == selection
         return
 
-    legacy = host / ".config/mise/conf.d/zz-chrono-harness-resolved.toml"
     legacy.write_bytes(b"# previous installation\n")
     for fault, status in (("no-headers", 2), ("truncated", 2), ("mv", 17)):
         run(status, FAULT=fault)
@@ -231,6 +256,11 @@ def exercise(host, state, *, pinned):
     run(CHRONO_TOOL_CHANNEL="v2.4.1", PREVIEW="9.0.0-alpha.2", STABLE="9.0.0")
     assert set(versions().values()) == {"2.4.1"}
     before = receipt.read_bytes()
+    extra = receipt.with_name("..dangling")
+    extra.symlink_to(state / "uncreated")
+    reject("Unexpected installation data entry: " + str(extra))
+    assert extra.is_symlink() and not extra.exists() and receipt.read_bytes() == before
+    extra.unlink()
     for invalid in ("", "all", "development", "v1;cmd", "v1.2", "v1.2.3\nbad"):
         calls = run(1, CHRONO_TOOL_CHANNEL=invalid)
         assert not any(c[0] == "curl" for c in calls)
